@@ -23,9 +23,11 @@ jobs:
       - name: Build & Pack CLI
         run: npm run cli:pack
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
         with:
-          name: 9router-cli-package
-          path: '*.tgz'
-          retention-days: 7
+          files: '*.tgz'
+          tag_name: latest
+          name: Latest CLI Release
+          body: "Automated build of the latest 9Router CLI package."
