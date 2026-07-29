@@ -59,14 +59,12 @@ function toolResultToText(content) {
  */
 function flattenToolInteractions(messages) {
   const out = [];
-
   for (const msg of messages) {
-    // OpenAI tool-result message → user text line
+    if (!msg) continue;
     if (msg.role === ROLE.TOOL) {
       out.push({ role: ROLE.USER, content: toolResultToText(msg.content) });
       continue;
     }
-
     if (msg.role === ROLE.ASSISTANT) {
       const parts = [];
       if (Array.isArray(msg.content)) {
@@ -86,8 +84,6 @@ function flattenToolInteractions(messages) {
       out.push({ role: ROLE.ASSISTANT, content: parts.filter(Boolean).join("\n") });
       continue;
     }
-
-    // User messages: replace tool_result blocks with text, keep text + images.
     if (msg.role === ROLE.USER && Array.isArray(msg.content)) {
       const newContent = msg.content.map(c =>
         c.type === CLAUDE_BLOCK.TOOL_RESULT
@@ -97,10 +93,8 @@ function flattenToolInteractions(messages) {
       out.push({ ...msg, content: newContent });
       continue;
     }
-
     out.push(msg);
   }
-
   return out;
 }
 
@@ -181,14 +175,6 @@ function convertMessages(messages, tools, model) {
   let currentMessage = null;
 
   const clientProvidedTools = tools && tools.length > 0;
-
-  // When the client did not send tools, flatten any tool calls/results in the
-  // history into plain text (see flattenToolInteractions). This keeps the
-  // request honest and sidesteps Kiro's "tools required" 400, since no
-  // structured tool content survives to trigger it.
-  if (!clientProvidedTools) {
-    messages = flattenToolInteractions(messages);
-  }
 
   let pendingUserContent = [];
   let pendingAssistantContent = [];
@@ -483,8 +469,11 @@ function convertMessages(messages, tools, model) {
   // flattenToolInteractions already collapsed every toolResult to text, so
   // there is nothing structured left to orphan.
   if (clientProvidedTools) {
-    reconcileOrphanedToolResults(mergedHistory, currentMessage);
-  }
+      reconcileOrphanedToolResults(mergedHistory, currentMessage);
+    } else {
+      // We already ran flattenToolInteractions on the input messages. 
+      // This is just to ensure currentMessage is safe.
+    }
 
   // Inject tools into currentMessage AFTER cleanup. Tools only exist here when
   // the client explicitly sent them (otherwise flattenToolInteractions already
@@ -518,11 +507,16 @@ function convertMessages(messages, tools, model) {
  *    legacy prompt tags remain only for models that need them.
  */
 export function openaiToKiroRequest(model, body, stream, credentials) {
-  const messages = body.messages || [];
+  let messages = body.messages || [];
   const tools = body.tools || [];
   const maxTokens = 32000;
   const temperature = body.temperature;
   const topP = body.top_p;
+
+  const clientProvidedTools = tools && tools.length > 0;
+  if (!clientProvidedTools) {
+    messages = flattenToolInteractions(messages);
+  }
 
   const { upstream: upstreamModel, agentic } = resolveKiroModel(model);
   const thinkingBudget = resolveKiroThinkingBudget(body, credentials?.rawHeaders, model);

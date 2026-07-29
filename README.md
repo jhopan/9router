@@ -73,6 +73,9 @@ Result: Never stop coding, minimal cost + 20-40% token savings via RTK
 
 ## ⚡ Quick Start
 
+> **Catatan Perbaikan Kustom (Jhopan Fork):**
+> Versi ini telah menambal isu `Improperly formed request` (HTTP 400) pada provider Kiro saat _tools_ kosong. Silakan baca [FIX_KIRO_400.md](./FIX_KIRO_400.md) untuk detail teknis perubahan ini.
+
 **1. Install globally:**
 
 ```bash
