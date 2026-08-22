@@ -101,6 +101,10 @@ export const MODEL_CAPABILITIES = {
   "vision-model":      { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 },
   "coder-model":       { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 },
 
+  // Qwen3.8 Max Free (tokenrouter "qwen/qwen3.8-max-free") — 256k context,
+  // not the 1M the *qwen*max* pattern implies
+  "qwen3.8-max-free":    { reasoning: true, thinkingFormat: "qwen", contextWindow: 262144, maxOutput: 65536 },
+
   // Kimi flagship + coding (platform + Kimi Code ids) — vision/video native
   "kimi-k3":           { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
   "k3":                { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
