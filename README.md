@@ -73,10 +73,17 @@ Result: Never stop coding, minimal cost + 20-40% token savings via RTK
 
 ## ⚡ Quick Start
 
-**1. Install globally:**
+**1. Install from latest release:**
 
 ```bash
-npm install -g 9router
+npm install -g https://github.com/jhopan/9router/releases/latest/download/9router.tgz
+9router
+```
+
+Or download the `.tgz` from the [latest release](https://github.com/jhopan/9router/releases/latest) and install it locally:
+
+```bash
+npm install -g ./9router.tgz
 9router
 ```
 
