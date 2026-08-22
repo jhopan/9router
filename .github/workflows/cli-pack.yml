@@ -23,7 +23,9 @@ jobs:
         run: npm run cli:pack
 
       - name: Locate tgz
-        run: find / -name "9router-*.tgz" -not -path "*/node_modules/*" 2>/dev/null; mv ../9router-*.tgz . 2>/dev/null || true; ls -la *.tgz
+        run: |
+          find .. -maxdepth 1 -name "9router-*.tgz" -exec mv {} . \;
+          ls -la *.tgz
 
       - name: Upload tgz
         uses: actions/upload-artifact@v5
