@@ -3,7 +3,6 @@
 const { spawn, exec, execSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const https = require("https");
 const net = require("net");
 const os = require("os");
 
@@ -24,42 +23,6 @@ function waitServerReady(port, { timeoutMs = 15000, intervalMs = 150 } = {}) {
     };
     tryConnect();
   });
-}
-
-// Native spinner - no external dependency
-function createSpinner(text) {
-  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-  let i = 0;
-  let interval = null;
-  let currentText = text;
-  return {
-    start() {
-      if (process.stdout.isTTY) {
-        process.stdout.write(`\r${frames[0]} ${currentText}`);
-        interval = setInterval(() => {
-          process.stdout.write(`\r${frames[i++ % frames.length]} ${currentText}`);
-        }, 80);
-      }
-      return this;
-    },
-    stop() {
-      if (interval) {
-        clearInterval(interval);
-        interval = null;
-      }
-      if (process.stdout.isTTY) {
-        process.stdout.write("\r\x1b[K");
-      }
-    },
-    succeed(msg) {
-      this.stop();
-      console.log(`✅ ${msg}`);
-    },
-    fail(msg) {
-      this.stop();
-      console.log(`❌ ${msg}`);
-    }
-  };
 }
 
 const pkg = require("./package.json");
@@ -173,17 +136,6 @@ if (skipUpdate && !trayMode && !process.stdin.isTTY) {
 
 // Always use Node.js runtime with absolute path
 const RUNTIME = process.execPath;
-
-// Compare semver versions: returns 1 if a > b, -1 if a < b, 0 if equal
-function compareVersions(a, b) {
-  const partsA = a.split(".").map(Number);
-  const partsB = b.split(".").map(Number);
-  for (let i = 0; i < 3; i++) {
-    if (partsA[i] > partsB[i]) return 1;
-    if (partsA[i] < partsB[i]) return -1;
-  }
-  return 0;
-}
 
 // Get app data dir (matches app/src/lib/dataDir.js convention)
 function getAppDataDir() {
@@ -455,53 +407,9 @@ function isRestrictedEnvironment() {
   return null;
 }
 
-// Check if new version available, return latest version or null
+// Update check disabled — this is a self-maintained fork, updates are manual.
 function checkForUpdate() {
-  return new Promise((resolve) => {
-    if (skipUpdate) {
-      resolve(null);
-      return;
-    }
-
-    const spinner = createSpinner("Checking for updates...").start();
-    let resolved = false;
-
-    const safetyTimeout = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        spinner.stop();
-        resolve(null);
-      }
-    }, 8000);
-
-    const done = (version) => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(safetyTimeout);
-      spinner.stop();
-      resolve(version);
-    };
-
-    const req = https.get(`https://registry.npmjs.org/${pkg.name}/latest`, { timeout: 3000 }, (res) => {
-      let data = "";
-      res.on("data", chunk => data += chunk);
-      res.on("end", () => {
-        try {
-          const latest = JSON.parse(data);
-          if (latest.version && compareVersions(latest.version, pkg.version) > 0) {
-            done(latest.version);
-          } else {
-            done(null);
-          }
-        } catch (e) {
-          done(null);
-        }
-      });
-    });
-
-    req.on("error", () => done(null));
-    req.on("timeout", () => { req.destroy(); done(null); });
-  });
+  return Promise.resolve(null);
 }
 
 // Open browser
