@@ -1,0 +1,102 @@
+name: Release
+
+# Trigger: push a version tag (git tag v0.5.60 && git push origin v0.5.60)
+# Creates TWO releases:
+#   1. Versioned release (v0.5.60) — with auto-generated notes from commits
+#   2. "latest" release — always points to the newest build, stable 9router.tgz URL
+# README install command uses releases/latest/download/9router.tgz
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # full history for release notes
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install root deps
+        run: npm install
+
+      - name: Install cli deps
+        run: npm --prefix cli install
+
+      - name: Build + pack CLI
+        run: npm run cli:pack
+
+      - name: Prepare tgz files
+        run: |
+          find .. -maxdepth 1 -name "9router-*.tgz" -exec mv {} . \;
+          cp 9router-*.tgz 9router.tgz
+          ls -la *.tgz
+
+      - name: Resolve version
+        id: ver
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Resolved version: $VERSION"
+
+      - name: Generate release notes from commits
+        id: notes
+        run: |
+          PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV" ]; then
+            NOTES=$(printf '## Changes since %s\n\n' "$PREV" && git log --pretty=format:"- %s" "$PREV"..HEAD)
+          else
+            NOTES=$(printf '## Changes\n\n' && git log --pretty=format:"- %s" HEAD~20..HEAD)
+          fi
+          # Save to file to avoid shell escaping issues
+          echo "$NOTES" > /tmp/release-notes.md
+          echo "Notes generated:"
+          cat /tmp/release-notes.md | head -10
+
+      - name: Create versioned release (v${{ steps.ver.outputs.VERSION }})
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.ver.outputs.VERSION }}"
+          NOTES=$(cat /tmp/release-notes.md)
+
+          gh release create "v${VERSION}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "9Router v${VERSION}" \
+            --notes "$NOTES" \
+            9router.tgz "9router-${VERSION}.tgz"
+
+      - name: Move 'latest' tag to this commit
+        run: |
+          git tag -f latest
+          git push origin latest --force
+
+      - name: Update 'latest' release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.ver.outputs.VERSION }}"
+
+          # Delete old latest release (tag stays, will be reused)
+          gh release delete latest --yes --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+
+          # Create fresh latest release on the moved tag
+          gh release create latest \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Latest CLI Release" \
+            --notes "Automated build of the latest 9Router CLI package.
+
+          Currently pointing to **v${VERSION}**.
+
+          For a specific version, see the [releases page](https://github.com/jhopan/9router/releases)." \
+            --latest \
+            9router.tgz "9router-${VERSION}.tgz"
