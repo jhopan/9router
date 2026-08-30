@@ -3,6 +3,9 @@ name: CLI Pack
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write   # gh release upload needs this to push assets to the release
+
 jobs:
   pack:
     runs-on: ubuntu-latest
