@@ -130,9 +130,20 @@ async function readResponsePrefix(response, signal, maxBytes, timeoutMs) {
 function appendRepairInstruction(body, kind) {
   const repaired = structuredClone(body || {});
   const instruction = REPAIR_INSTRUCTIONS[kind] || "Retry the previous incomplete Kiro response.";
-  repaired.systemPrompt = repaired.systemPrompt
-    ? `${repaired.systemPrompt}\n\n${instruction}`
-    : instruction;
+  // Kiro rejects a top-level `systemPrompt` (REQUEST_BODY_INVALID) on the
+  // CodeWhisperer surface, and transformRequest strips it. Fold the repair
+  // directive into the current user message content instead — same wire
+  // convention OmniRoute uses for its reasoning/repair directives.
+  const cur = repaired?.conversationState?.currentMessage?.userInputMessage;
+  if (cur) {
+    cur.content = cur.content
+      ? `${cur.content}\n\n${instruction}`
+      : instruction;
+  } else {
+    repaired.systemPrompt = repaired.systemPrompt
+      ? `${repaired.systemPrompt}\n\n${instruction}`
+      : instruction;
+  }
   return repaired;
 }
 
@@ -230,12 +241,20 @@ export class KiroExecutor extends BaseExecutor {
     const headers = {
       ...this.config.headers,
       "Amz-Sdk-Request": "attempt=1; max=3",
-      "Amz-Sdk-Invocation-Id": uuidv4()
+      "Amz-Sdk-Invocation-Id": uuidv4(),
+      // CodeWhisperer prompt caching — matched to OmniRoute's Kiro executor so
+      // repeated requests reuse the cached system/history prefix (KiRO is
+      // AWS Bedrock-backed; caching cuts cost/latency on long sessions).
+      "x-amzn-bedrock-cache-control": "enable",
+      "anthropic-beta": "prompt-caching-2024-07-31",
     };
     if (url.includes("://codewhisperer.")) {
       headers["X-Amz-Target"] = KIRO_CODEWHISPERER_TARGET;
     } else {
-      delete headers["X-Amz-Target"];
+      // q.{region}.amazonaws.com is the same Amazon Q / CodeWhisperer service —
+      // it needs the same generateAssistantResponse target. OmniRoute sends
+      // X-Amz-Target unconditionally for every Kiro host.
+      headers["X-Amz-Target"] = KIRO_CODEWHISPERER_TARGET;
     }
 
     // API-key auth: the key is stored as accessToken and sent as a bearer token
@@ -280,31 +299,44 @@ export class KiroExecutor extends BaseExecutor {
   getOrderedBaseUrls(credentials) {
     const baseUrls = this.getBaseUrls();
     const authMethod = credentials?.providerSpecificData?.authMethod;
-    // IAM Identity Center (idc) tokens are AWS SSO access tokens — the same
-    // family as external_idp/api_key. The kiro.dev gateway rejects them with
-    // 403 "bearer token invalid", so they must hit the CodeWhisperer
-    // *.amazonaws.com surface, and in the region the token was minted in
-    // (the baseUrls are hardcoded us-east-1).
-    const isCodeWhispererSurface =
-      authMethod === "api_key" || authMethod === "external_idp" || authMethod === "idc";
-    if (!isCodeWhispererSurface) return baseUrls;
+    // Always prefer the CodeWhisperer / Amazon Q surface first — the Kiro CLI
+    // gateway (runtime.*.kiro.dev) is no longer in the baseUrls list, and the
+    // Amazon hosts are what accept the 9router Kiro payload. Region-aware:
+    // derive the runtime region from the profileArn (or the stored region) so
+    // IAM Identity Center accounts in eu-central-1 hit q.eu-central-1 instead
+    // of the hardcoded us-east-1 host (which rejects region-bound tokens).
+    // Importing kiroRegion is avoided here to keep the executor's deps minimal;
+    // region resolution mirrors resolveKiroRuntimeRegion in OmniRoute.
+    const profileArn = credentials?.providerSpecificData?.profileArn;
+    const m = typeof profileArn === "string"
+      ? profileArn.toLowerCase().match(/^arn:aws:codewhisperer:([a-z0-9-]+):/)
+      : null;
+    const arnRegion = m?.[1];
+    const storedRegion = (credentials?.providerSpecificData?.region || "").trim().toLowerCase();
+    const profileRegions = ["us-east-1", "eu-central-1"];
+    const region = arnRegion || (profileRegions.includes(storedRegion) ? storedRegion : "us-east-1");
 
-    const region = (credentials?.providerSpecificData?.region || "us-east-1").trim();
-    const regionalize = (u) =>
-      region && region !== "us-east-1" && u.includes("amazonaws.com")
-        ? u.replace(/([a-z]+)\.[a-z0-9-]+\.amazonaws\.com/, `$1.${region}.amazonaws.com`)
-        : u;
+    const regionalize = (u) => {
+      if (region && region !== "us-east-1" && u.includes("amazonaws.com")) {
+        return u.replace(/([a-z]+)\.[a-z0-9-]+\.amazonaws\.com/, `$1.${region}.amazonaws.com`);
+      }
+      return u;
+    };
 
-    const amazon = baseUrls.filter((u) => u.includes("amazonaws.com")).map(regionalize);
+    // Keep any host that is a q.* or codewhisperer.* Amazon surface; drop
+    // non-Amazon hosts (e.g. a stray runtime URL) to avoid sending the Kiro
+    // payload somewhere that rejects it.
+    const amazon = baseUrls
+      .filter((u) => u.includes("amazonaws.com"))
+      .map(regionalize);
     const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
+    // For api_key, prefer q.* last-tier per OmniRoute's ordering; otherwise
+    // codewhisperer us-east-1 home comes first.
     if (authMethod === "api_key") {
       const q = amazon.filter((u) => u.includes("://q."));
       const remaining = amazon.filter((u) => !u.includes("://q."));
-      return q.length > 0
-        ? [...q, ...remaining, ...others]
-        : [...amazon, ...others];
+      return q.length > 0 ? [...q, ...remaining, ...others] : [...amazon, ...others];
     }
-
     return amazon.length > 0 ? [...amazon, ...others] : baseUrls;
   }
 
@@ -322,7 +354,27 @@ export class KiroExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    return body;
+    // Kiro is strict and rejects any unknown top-level field (tools, stream,
+    // model, agentMode, systemPrompt, agentContinuationId, agentTaskType, ...)
+    // with 400 REQUEST_BODY_INVALID. Mirror OmniRoute: only keep the fields the
+    // translator explicitly built. systemPrompt is NOT forwarded — OmniRoute
+    // folds it into currentMessage content instead; forwarding it top-level is
+    // the remainder-400 signal on the CodeWhisperer surface.
+    const b = body || {};
+    const kiroPayload = {};
+    if (b.conversationState !== undefined) kiroPayload.conversationState = b.conversationState;
+    if (b.profileArn !== undefined) kiroPayload.profileArn = b.profileArn;
+    if (b.inferenceConfig !== undefined) kiroPayload.inferenceConfig = b.inferenceConfig;
+    if (b.additionalModelRequestFields !== undefined) {
+      kiroPayload.additionalModelRequestFields = b.additionalModelRequestFields;
+    }
+    // Fallback: if somehow conversationState isn't present, pass the rest
+    // stripped of model (for backward compat if something bypasses the translator).
+    if (!kiroPayload.conversationState) {
+      const { model: _model, ...rest } = b;
+      return rest;
+    }
+    return kiroPayload;
   }
 
   /**

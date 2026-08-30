@@ -16,9 +16,18 @@ export default {
   },
   category: "free",
   transport: {
-    baseUrl: "https://runtime.us-east-1.kiro.dev/generateAssistantResponse",
+    // Primary host is the CODEFLUENCER/Amazon Q surface (codewhisperer.*),
+    // NOT the Kiro CLI gateway (runtime.us-east-1.kiro.dev). The Kiro IDE
+    // gateway rejects the 9router Kiro payload envelope with
+    // 400 {"message":"Improperly formed request.","reason":"REQUEST_BODY_INVALID"}
+    // regardless of model — it expects a different request shape. OmniRoute
+    // (decolua/9router upstream, which works) hits codewhisperer/us-east-1
+    // directly. Keeping kiro.dev first meant OAuth/social requests (the
+    // default ordering, since getOrderedBaseUrls only reorders Amazon hosts
+    // for api_key/external_idp/idc) hit the wrong host first and never
+    // reached the working surface.
+    baseUrl: "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",
     baseUrls: [
-      "https://runtime.us-east-1.kiro.dev/generateAssistantResponse",
       "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",
       "https://q.us-east-1.amazonaws.com/generateAssistantResponse",
     ],
