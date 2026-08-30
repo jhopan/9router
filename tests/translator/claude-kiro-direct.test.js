@@ -110,6 +110,45 @@ describe("Claude → Kiro (direct route)", () => {
     expect(out.systemPrompt).toContain("CHUNKED WRITE PROTOCOL");
   });
 
+  it("guard 3: every history userInputMessage carries origin so CodeWhisperer accepts it", () => {
+    // Kiro/CodeWhisperer rejects conversations whose user turns lack `origin`
+    // with 400 REQUEST_BODY_INVALID. currentMessage already got origin in the
+    // translator; history turns must too.
+    const out = C2K({
+      messages: [
+        { role: "user", content: "turn one" },
+        { role: "assistant", content: "reply one" },
+        { role: "user", content: "turn two" },
+      ],
+    });
+    const historyUsers = out.conversationState.history.filter((h) => h.userInputMessage);
+    expect(historyUsers.length).toBeGreaterThan(0);
+    for (const h of historyUsers) {
+      expect(h.userInputMessage.origin).toBe("AI_EDITOR");
+    }
+    expect(out.conversationState.currentMessage.userInputMessage.origin).toBe("AI_EDITOR");
+  });
+
+  it("guard 4: an empty tool_result is serialized to a non-empty placeholder, not [{text:\"\"}]", () => {
+    // CodeWhisperer rejects a toolResult whose content is [{ text: "" }] with
+    // 400 REQUEST_BODY_INVALID. Empty results must be preserved as text.
+    const out = C2K({
+      tools: [{ name: "f", description: "fn", input_schema: { type: "object", properties: {} } }],
+      messages: [
+        { role: "user", content: "go" },
+        { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "f", input: {} }] },
+        { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "" }] },
+      ],
+    });
+    const cur = out.conversationState.currentMessage.userInputMessage;
+    const results = cur.userInputMessageContext?.toolResults;
+    if (results?.length) {
+      for (const r of results) {
+        expect(r.content?.[0]?.text).not.toBe("");
+      }
+    }
+  });
+
   it("maps output_config.effort high to Kiro CLI-style additionalModelRequestFields for effort models", () => {
     const out = C2K({
       output_config: { effort: "high" },

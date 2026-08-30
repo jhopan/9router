@@ -176,6 +176,12 @@ function normalizeTurns(history, currentMessage, modelId) {
     if (turn.userInputMessage) {
       turn.userInputMessage.content = text(turn.userInputMessage.content).trim() || "continue";
       turn.userInputMessage.modelId ||= modelId;
+      // CodeWhisperer rejects conversations whose user turns lack `origin`
+      // with 400 {"message":"Improperly formed request.","reason":"REQUEST_BODY_INVALID"}.
+      // Every userInputMessage in history must carry it, not just currentMessage.
+      if (!turn.userInputMessage.origin) {
+        turn.userInputMessage.origin = "AI_EDITOR";
+      }
       if (turn.userInputMessage.userInputMessageContext?.tools) {
         delete turn.userInputMessage.userInputMessageContext.tools;
       }
@@ -225,10 +231,15 @@ function normalizeToolResult(result) {
   const content = Array.isArray(result?.content)
     ? result.content.map((part) => ({ text: text(part?.text ?? part) }))
     : [{ text: text(result?.content) }];
+  // CodeWhisperer rejects a toolResult whose content is [{ text: "" }] with
+  // 400 REQUEST_BODY_INVALID. A non-empty placeholder preserves the empty result
+  // as context instead of failing the whole turn.
+  const nonEmpty = content.filter((part) => part.text && part.text.trim());
+  const finalContent = nonEmpty.length > 0 ? nonEmpty : [{ text: "(no output)" }];
   return {
     toolUseId: rawId(result?.toolUseId),
     status: result?.status === "error" ? "error" : "success",
-    content: content.length > 0 ? content : [{ text: "" }],
+    content: finalContent,
   };
 }
 
