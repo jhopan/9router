@@ -14,6 +14,7 @@ import { getCodeBuddyCnUsage, getCodeBuddyIntlUsage } from "./usage/codebuddy-cn
 import { getGrokCliUsage } from "./usage/grok-cli.js";
 import { getKimiUsage } from "./usage/kimi.js";
 import { getDeepseekUsage } from "./usage/deepseek.js";
+import { getAgentrouterUsage } from "./usage/agentrouter.js";
 import { getZedUsage } from "./usage/zed.js";
 import { resolveQoderCredentials } from "./qoderModels.js";
 import { getGlmUsage } from "./usage/glm.js";
@@ -55,6 +56,11 @@ const USAGE_HANDLERS = {
   "grok-cli": (c) => getGrokCliUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   kimi: (c) => getKimiUsage(c.accessToken, c.apiKey, c.proxyOptions, c.providerSpecificData),
   deepseek: (c) => getDeepseekUsage(c.apiKey, c.proxyOptions),
+  agentrouter: (c) => getAgentrouterUsage(
+    c.providerSpecificData?.consoleApiKey,
+    c.providerSpecificData?.newApiUserId,
+    c.proxyOptions,
+  ),
   zed: (c) => getZedUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
 };
 

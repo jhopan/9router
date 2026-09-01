@@ -479,6 +479,12 @@ Default URLs:
         <sub>SiliconFlow</sub>
       </td>
     </tr>
+    <tr>
+      <td align="center" width="100">
+        <img src="./public/providers/agentrouter.png" width="50" alt="AgentRouter"/><br/>
+        <sub>AgentRouter</sub>
+      </td>
+    </tr>
   </table>
   <p><i>...and 20+ more providers including Nebius, Chutes, Hyperbolic, and custom OpenAI/Anthropic compatible endpoints</i></p>
 </div>
@@ -635,6 +641,16 @@ Seamless translation between formats:
 - **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **Cursor** ↔ **Kiro** ↔ **Vertex** ↔ **Antigravity** ↔ **Ollama** ↔ **OpenAI Responses**
 - Your CLI tool sends OpenAI format → 9Router translates → Provider receives native format
 - Works with any tool that supports custom OpenAI endpoints
+
+### 🌐 AgentRouter Support
+
+Use [AgentRouter](https://agentrouter.org) — an Anthropic-compatible relay that resells Claude & other models at lower prices:
+
+- **Built-in `agentrouter` provider** — no extra config, paste your `sk-...` key
+- **`AR/<model>` prefix** — e.g. `AR/claude-opus-4-6`, `AR/glm-5.1`, `AR/deepseek-v3.2`
+- **Claude Code wire image** — full fingerprint headers baked in, passes AgentRouter's WAF
+- **Auto-translate (ID ↔ EN)** — input translated to English before forwarding (AgentRouter accepts Mandarin/English/French/German/Russian), responses translated back to Indonesian
+- **Quota tracking** — balance via New-API System Access Token + New-Api-User ID
 
 ### 👥 Multi-Account Support
 

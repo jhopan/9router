@@ -20,6 +20,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
+  const isAgentRouter = provider === "agentrouter";
   const providerRegions = AI_PROVIDERS?.[provider]?.regions || null;
   const defaultRegion = AI_PROVIDERS?.[provider]?.defaultRegion || providerRegions?.[0]?.id || "";
 
@@ -38,6 +39,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [agentRouterData, setAgentRouterData] = useState({ consoleApiKey: "", newApiUserId: "" });
   const [region, setRegion] = useState(defaultRegion);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
@@ -66,6 +68,12 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     }
     if (isCloudflareAi) {
       return { accountId: cloudflareData.accountId };
+    }
+    if (isAgentRouter) {
+      return {
+        consoleApiKey: agentRouterData.consoleApiKey,
+        newApiUserId: agentRouterData.newApiUserId,
+      };
     }
     if (providerRegions && region) {
       return { region };
@@ -330,6 +338,28 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             <p className="text-xs text-text-muted mt-2">
               Find your Account ID in the right sidebar of <a href="https://dash.cloudflare.com" target="_blank" rel="noopener noreferrer" className="text-primary underline">dash.cloudflare.com</a>
             </p>
+          </div>
+        )}
+        {isAgentRouter && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">AgentRouter Quota Console</h3>
+            <div className="flex flex-col gap-3">
+              <Input
+                label="System Access Token"
+                value={agentRouterData.consoleApiKey}
+                onChange={(e) => setAgentRouterData({ ...agentRouterData, consoleApiKey: e.target.value })}
+                placeholder="New-API System Access Token"
+                hint="Optional: enables quota/balance tracking. NOT the routing api key."
+                type="password"
+              />
+              <Input
+                label="New-Api-User ID"
+                value={agentRouterData.newApiUserId}
+                onChange={(e) => setAgentRouterData({ ...agentRouterData, newApiUserId: e.target.value })}
+                placeholder="12345"
+                hint="Optional: the New-Api-User header value for quota identity."
+              />
+            </div>
           </div>
         )}
         {isAzure && (

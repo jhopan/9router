@@ -8,6 +8,7 @@ import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamH
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
+import { wrapAgentRouterResponseStream } from "../../translator/concerns/agentrouterResponseTranslate.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
 // Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
@@ -81,11 +82,29 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey });
 
+  // AgentRouter replies in English; user wants Indonesian. Buffer the whole
+  // Claude SSE stream, translate the text to Indonesian, re-emit as a fresh
+  // stream before it reaches the client. Fail-open: passes original on error.
+  let sseBody = providerResponse.body;
+  if (provider === "agentrouter") {
+    try {
+      sseBody = await wrapAgentRouterResponseStream(providerResponse, log);
+    } catch (err) {
+      log?.warn?.("TRANSLATE_OUT", `wrap failed: ${err.message}`);
+      sseBody = providerResponse.body;
+    }
+  }
+
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
   const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
-  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
+
+  // Build a fresh providerResponse whose body is the (possibly translated) stream.
+  const pipedResponse = providerResponse.body === sseBody
+    ? providerResponse
+    : new Response(sseBody, { status: providerResponse.status, headers: providerResponse.headers });
+  const transformedBody = pipeWithDisconnect(pipedResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,

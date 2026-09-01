@@ -3,6 +3,7 @@ import { translateRequest } from "../translator/index.js";
 import { applyThinking, extractThinking, stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
+import { translateAgentRouterBody } from "../translator/concerns/agentrouterTranslate.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
@@ -296,6 +297,17 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
+
+  // AgentRouter only accepts input in Mandarin/English/French/German/Russian.
+  // Translate user turns to English before dispatch to avoid 400 content-blocked
+  // false-positives on Indonesian/mixed-language prompts. Fail-open.
+  if (provider === "agentrouter") {
+    try {
+      await translateAgentRouterBody(translatedBody, log);
+    } catch (err) {
+      log?.warn?.("TRANSLATE", `skipped: ${err.message}`);
+    }
+  }
 
   // Pin cache breakpoints to the final body — every saver above can reshape
   // system/tools/messages, and a stale anchor costs a full prefix rewrite.
