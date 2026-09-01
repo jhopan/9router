@@ -16,9 +16,7 @@
  */
 
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
-import { getApiKeys } from "@/lib/db/repos/apiKeysRepo.js";
-
-const TRANSLATE_MODEL = "translate";
+import { getTranslateConfig, resolveTranslateApiKey, localBaseUrl } from "./translateConfig.js";
 
 // System prompt forcing a clean, literal English translation (no explanation).
 // The translate combo is a fast instruction-following model; keep it terse.
@@ -26,23 +24,15 @@ const TRANSLATE_SYSTEM =
   "You are a translation engine. Translate the user's message to clear, natural English. " +
   "Return ONLY the translated text. Do not add explanations, commentary, or quotes.";
 
-function localBaseUrl() {
-  const port = process.env.PORT || "20127";
-  return `http://localhost:${port}`;
-}
-
-async function resolveApiKey() {
-  const keys = await getApiKeys();
-  const activeKeys = keys.filter((k) => k.isActive);
-  return (activeKeys[0]?.key || keys[0]?.key || "").trim();
-}
-
-// Translate a single string to English via the local "translate" combo.
-async function translateText(text, apiKey, baseUrl, log) {
+// Translate a string to English via the translate COMBO. The combo holds the
+// models[] + fallback/round-robin + multi-account logic — the adapter just asks
+// the combo ("penjual") to translate; it doesn't pick a model itself.
+// Throws on HTTP failure so callers fail-open.
+async function translateText(text, combo, apiKey, log) {
   if (typeof text !== "string" || text.trim() === "") return text;
 
   const body = {
-    model: TRANSLATE_MODEL,
+    model: combo,
     stream: true,
     max_tokens: 400,
     messages: [
@@ -53,6 +43,7 @@ async function translateText(text, apiKey, baseUrl, log) {
     ],
   };
 
+  const baseUrl = localBaseUrl();
   let response;
   try {
     response = await proxyAwareFetch(
@@ -68,8 +59,7 @@ async function translateText(text, apiKey, baseUrl, log) {
       null,
     );
   } catch (err) {
-    log?.warn?.("TRANSLATE", `fetch failed: ${err.message}`);
-    return text;
+    throw new Error(`translate fetch failed: ${err.message}`);
   }
 
   if (!response.ok) {
@@ -79,30 +69,28 @@ async function translateText(text, apiKey, baseUrl, log) {
     } catch {
       /* ignore */
     }
-    log?.warn?.("TRANSLATE", `combo returned ${response.status}: ${detail}`);
-    return text;
+    throw new Error(`translate returned ${response.status}: ${detail}`);
   }
 
+  let full = "";
   try {
     // Streaming response: reader accumulates text deltas.
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let full = "";
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       full += decoder.decode(value, { stream: true });
     }
-
-    const translated = extractChoicesContent(full);
-    if (translated && translated.trim()) {
-      return translated.trim();
-    }
   } catch (err) {
-    log?.warn?.("TRANSLATE", `stream parse failed: ${err.message}`);
+    throw new Error(`translate stream parse failed: ${err.message}`);
   }
 
-  return text;
+  const translated = extractChoicesContent(full);
+  if (translated && translated.trim()) {
+    return translated.trim();
+  }
+  throw new Error("translate returned empty output");
 }
 
 // Parse SSE/chunked chat.completions output and pull the first assistant content.
@@ -135,13 +123,23 @@ function extractChoicesContent(raw) {
 export async function translateAgentRouterBody(body, log) {
   if (!body || !Array.isArray(body.messages)) return body;
 
-  // Only run when the target is agentrouter — guarded by the caller.
-  const apiKey = await resolveApiKey();
+  // Config-driven; disabled => no translation (agentrouter behaves as before).
+  const config = await getTranslateConfig();
+  if (!config.enabled) {
+    log?.debug?.("TRANSLATE", "disabled; skipping");
+    return body;
+  }
+
+  const apiKey = await resolveTranslateApiKey(config, log);
   if (!apiKey) {
     log?.warn?.("TRANSLATE", "no active API key; skipping translation");
     return body;
   }
-  const baseUrl = localBaseUrl();
+  if (!config.combo || !config.combo.trim()) {
+    log?.warn?.("TRANSLATE", "no translate combo configured; skipping");
+    return body;
+  }
+  const combo = config.combo;
 
   const messages = body.messages;
   for (let i = 0; i < messages.length; i++) {
@@ -152,13 +150,13 @@ export async function translateAgentRouterBody(body, log) {
 
     const content = msg.content;
     if (typeof content === "string") {
-      messages[i] = { ...msg, content: await translateText(content, apiKey, baseUrl, log) };
+      messages[i] = { ...msg, content: await translateText(content, combo, apiKey, log) };
     } else if (Array.isArray(content)) {
       const newBlocks = [];
       let changed = false;
       for (const block of content) {
         if (block && block.type === "text" && typeof block.text === "string") {
-          const translated = await translateText(block.text, apiKey, baseUrl, log);
+          const translated = await translateText(block.text, combo, apiKey, log);
           newBlocks.push({ ...block, text: translated });
           if (translated !== block.text) changed = true;
         } else {

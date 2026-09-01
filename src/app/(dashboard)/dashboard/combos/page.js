@@ -52,6 +52,9 @@ export default function CombosPage() {
   const [activeProviders, setActiveProviders] = useState([]);
   const [comboStrategies, setComboStrategies] = useState({});
   const [capacityAdapter, setCapacityAdapter] = useState(EMPTY_CAPACITY_ADAPTER);
+  const [translateConfig, setTranslateConfig] = useState({
+    enabled: false, combo: "translate", providers: ["agentrouter"],
+  });
   const { getCaps } = useModelCaps();
   const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
@@ -83,6 +86,14 @@ export default function CombosPage() {
         normalized[cap.key] = normalizeCapEntry(rawAdapter[cap.key]);
       }
       setCapacityAdapter(normalized);
+      const rawTranslate = settingsData.translateConfig || {};
+      setTranslateConfig({
+        enabled: rawTranslate.enabled === true,
+        combo: (rawTranslate.combo && String(rawTranslate.combo).trim()) || "translate",
+        providers: Array.isArray(rawTranslate.providers) && rawTranslate.providers.length
+          ? rawTranslate.providers
+          : ["agentrouter"],
+      });
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
@@ -100,6 +111,19 @@ export default function CombosPage() {
       });
     } catch (error) {
       console.log("Error updating capacity adapter:", error);
+    }
+  };
+
+  const handleSetTranslateConfig = async (next) => {
+    setTranslateConfig(next);
+    try {
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ translateConfig: next }),
+      });
+    } catch (error) {
+      console.log("Error updating translate config:", error);
     }
   };
 
@@ -251,6 +275,15 @@ export default function CombosPage() {
         onChange={handleSetCapacityAdapter}
         activeProviders={activeProviders}
         getCaps={getCaps}
+      />
+
+      {/* Translate Adapter */}
+      <TranslateAdapterSection
+        translateConfig={translateConfig}
+        onChange={handleSetTranslateConfig}
+        activeProviders={activeProviders}
+        getCaps={getCaps}
+        combos={combos}
       />
 
       {/* Create Modal - Use key to force remount and reset state */}
@@ -548,6 +581,130 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
           closeOnSelect={false}
         />
       )}
+    </Card>
+  );
+}
+
+function TranslateAdapterSection({ translateConfig, onChange, activeProviders, getCaps, combos }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Translate Adapter</p>
+          <p className="text-xs text-text-muted mt-0.5">
+            Auto-translates requests/responses for providers below (e.g. AgentRouter
+            accepts only Mandarin/English/French/German/Russian). The chosen combo
+            decides the models + fallback/round-robin.
+          </p>
+        </div>
+      </div>
+      <TranslateAdapterCap
+        entry={translateConfig}
+        onChange={onChange}
+        activeProviders={activeProviders}
+        combos={combos}
+      />
+    </div>
+  );
+}
+
+function TranslateAdapterCap({ entry, onChange, activeProviders, combos }) {
+  const [showProviderMenu, setShowProviderMenu] = useState(false);
+  const { enabled, combo, providers } = entry;
+
+  const patch = (p) => onChange({ ...entry, ...p });
+
+  const toggleProvider = (provider) => {
+    const has = providers.includes(provider);
+    const next = has ? providers.filter((p) => p !== provider) : [...providers, provider];
+    // Keep at least one provider so the adapter stays meaningful.
+    patch({ providers: next.length === 0 ? ["agentrouter"] : next });
+  };
+
+  const comboOptions = (combos || []).filter((c) => !c.kind || c.kind === "llm");
+  // De-dupe providers for the dropdown options (same provider may have multiple connections).
+  const providerOptions = Array.from(new Set(activeProviders.map((c) => c.provider)));
+
+  return (
+    <Card padding="sm" className={`group ${!enabled ? "opacity-50" : ""}`}>
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-1 items-start gap-2.5 sm:items-center">
+          <Toggle
+            checked={enabled}
+            onChange={(v) => patch({ enabled: v })}
+            aria-label="Enable translate adapter"
+          />
+          <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-primary text-[18px]">translate</span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <code className="font-mono text-sm font-medium">Translate</code>
+              <span className="text-[10px] text-text-muted">— Bahasa (ID ⇄ EN)</span>
+            </div>
+
+            {/* Combo + Applies-to on one row (side-by-side, no wrap) */}
+            <div className="mt-1.5 flex flex-nowrap items-center gap-x-4">
+              <div className="flex shrink-0 items-center gap-1.5">
+                <label className="text-[10px] text-text-muted">Combo:</label>
+                <select
+                  value={combo}
+                  onChange={(e) => patch({ combo: e.target.value })}
+                  disabled={!enabled}
+                  className="h-7 rounded-md border border-black/10 bg-black/[0.02] px-2 text-xs text-text-primary outline-none transition-colors hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10"
+                  aria-label="Translate combo"
+                >
+                  {(comboOptions.length ? comboOptions : [{ name: combo }]).map((c) => (
+                    <option key={c.name || c} value={c.name || c}>{c.name || c}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex shrink-0 items-center gap-1.5">
+                <label className="text-[10px] text-text-muted">Applies to:</label>
+                <div className="relative" ref={null}>
+                  <button
+                    type="button"
+                    onClick={() => setShowProviderMenu((v) => !v)}
+                    disabled={!enabled}
+                    className="flex items-center gap-1.5 rounded-md border border-black/10 bg-black/[0.02] px-2 py-1 text-xs text-text-primary transition-colors hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10"
+                    aria-haspopup="listbox"
+                  >
+                    <span className="truncate">
+                      {providers.length === 0 ? "None" : providers.join(", ")}
+                    </span>
+                    <span className="material-symbols-outlined text-[14px]">expand_more</span>
+                  </button>
+                  {showProviderMenu && (
+                    <div className="absolute left-0 top-full z-50 mt-1 max-h-56 w-52 overflow-y-auto rounded-xl border border-black/10 bg-white p-1 shadow-xl dark:border-white/10 dark:bg-zinc-900">
+                      {providerOptions.map((provider) => {
+                        const checked = providers.includes(provider);
+                        return (
+                          <label
+                            key={provider}
+                            className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-text-main transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleProvider(provider)}
+                              className="size-4 rounded border-black/20 dark:border-white/20"
+                            />
+                            <span className="truncate">{provider}</span>
+                          </label>
+                        );
+                      })}
+                      {providerOptions.length === 0 && (
+                        <p className="px-2 py-1.5 text-xs text-text-muted">No providers connected</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </Card>
   );
 }

@@ -19,36 +19,21 @@
  */
 
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
-import { getApiKeys } from "@/lib/db/repos/apiKeysRepo.js";
+import { getTranslateConfig, resolveTranslateApiKey, localBaseUrl } from "./translateConfig.js";
 
-const TRANSLATE_MODEL = "translate";
 const TRANSLATE_SYSTEM =
   "You are a translation engine. Translate the text to natural, clear Indonesian (Bahasa Indonesia). " +
   "Return ONLY the translation. Do not add explanations, commentary, or quotes. " +
   "Keep code blocks, file paths, and technical identifiers exactly as-is.";
 
-function localBaseUrl() {
-  const port = process.env.PORT || "20127";
-  return `http://localhost:${port}`;
-}
-
-async function resolveApiKey(log) {
-  try {
-    const keys = await getApiKeys();
-    const activeKeys = keys.filter((k) => k.isActive);
-    return (activeKeys[0]?.key || keys[0]?.key || "").trim();
-  } catch (err) {
-    log?.warn?.("TRANSLATE_OUT", `no api key: ${err.message}`);
-    return "";
-  }
-}
-
-// Translate a full response string to Indonesian via the local combo.
-async function translateToIndonesian(text, apiKey, baseUrl, log) {
+// Translate a response to Indonesian via the translate COMBO. The combo holds
+// the models[] + fallback/round-robin + multi-account logic — the adapter just
+// asks the combo ("penjual") to translate. Throws on failure so callers fail-open.
+async function translateToIndonesian(text, combo, apiKey, log) {
   if (typeof text !== "string" || text.trim() === "") return text;
 
   const body = {
-    model: TRANSLATE_MODEL,
+    model: combo,
     stream: true,
     max_tokens: 1600,
     messages: [
@@ -57,6 +42,7 @@ async function translateToIndonesian(text, apiKey, baseUrl, log) {
     ],
   };
 
+  const baseUrl = localBaseUrl();
   let response;
   try {
     response = await proxyAwareFetch(
@@ -72,8 +58,7 @@ async function translateToIndonesian(text, apiKey, baseUrl, log) {
       null,
     );
   } catch (err) {
-    log?.warn?.("TRANSLATE_OUT", `fetch failed: ${err.message}`);
-    return text;
+    throw new Error(`translate fetch failed: ${err.message}`);
   }
 
   if (!response.ok) {
@@ -83,26 +68,25 @@ async function translateToIndonesian(text, apiKey, baseUrl, log) {
     } catch {
       /* ignore */
     }
-    log?.warn?.("TRANSLATE_OUT", `combo returned ${response.status}: ${detail}`);
-    return text;
+    throw new Error(`translate returned ${response.status}: ${detail}`);
   }
 
+  let full = "";
   try {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let full = "";
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       full += decoder.decode(value, { stream: true });
     }
-    const translated = extractChoicesContent(full);
-    if (translated && translated.trim()) return translated.trim();
   } catch (err) {
-    log?.warn?.("TRANSLATE_OUT", `stream parse failed: ${err.message}`);
+    throw new Error(`translate stream parse failed: ${err.message}`);
   }
 
-  return text;
+  const translated = extractChoicesContent(full);
+  if (translated && translated.trim()) return translated.trim();
+  throw new Error("translate returned empty output");
 }
 
 /**
@@ -262,14 +246,23 @@ export async function wrapAgentRouterResponseStream(response, log) {
       return rawToStream(raw);
     }
 
-    const apiKey = await resolveApiKey(log);
+    const config = await getTranslateConfig();
+    if (!config.enabled) {
+      log?.debug?.("TRANSLATE_OUT", "disabled; passing original stream");
+      return rawToStream(raw);
+    }
+
+    const apiKey = await resolveTranslateApiKey(config, log);
     if (!apiKey) {
       log?.warn?.("TRANSLATE_OUT", "no key; passing original stream");
       return rawToStream(raw);
     }
 
-    const baseUrl = localBaseUrl();
-    const translated = await translateToIndonesian(originalText, apiKey, baseUrl, log);
+    if (!config.combo || !config.combo.trim()) {
+      log?.warn?.("TRANSLATE_OUT", "no translate combo configured; passing original stream");
+      return rawToStream(raw);
+    }
+    const translated = await translateToIndonesian(originalText, config.combo, apiKey, log);
     if (!translated || translated === originalText) {
       log?.warn?.("TRANSLATE_OUT", "no change; passing original stream");
       return rawToStream(raw);

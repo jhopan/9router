@@ -14,6 +14,15 @@ const DEFAULT_SETTINGS = {
   stickyRoundRobinLimit: 3,
   providerStrategies: {},
   quotaVisibility: {},
+  // Auto ID↔EN translation adapter. The translate COMBO is the source of truth
+  // for models + multi-account + fallback/round-robin (set in Combo UI). Agents
+  // ("customers", e.g. agentrouter) just ask the adapter to translate. Disabled
+  // by default.
+  translateConfig: {
+    enabled: false,
+    combo: "translate",
+    providers: ["agentrouter"],
+  },
   comboStrategy: "fallback",
   comboStickyRoundRobinLimit: 1,
   comboStrategies: {},
