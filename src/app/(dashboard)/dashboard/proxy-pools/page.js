@@ -410,7 +410,11 @@ export default function ProxyPoolsPage() {
       if (res.ok) {
         await fetchProxyPools();
         closeCloudflareModal();
-        notify.success(`Deployed: ${data.deployUrl}`);
+        if (data.failed?.length) {
+          notify.warning(`${data.summary || "Partial deploy"} — ${data.failed.length} failed`);
+        } else {
+          notify.success(data.summary || `Deployed: ${data.deployUrl}`);
+        }
       } else {
         notify.error(data.error || "Deploy failed");
       }
@@ -871,6 +875,7 @@ export default function ProxyPoolsPage() {
               <li>High performance global routing and IP masking via Cloudflare Workers</li>
               <li>Free tier: 100,000 requests per day</li>
               <li>Requires Cloudflare Account ID and a Workers API Token (Edit Workers permission)</li>
+              <li><b>Batch deploy:</b> use <code>|</code> to deploy multiple Workers across multiple accounts at once</li>
             </ul>
             <div className="mt-2 pt-2 border-t border-orange-500/10 text-xs text-text-muted">
               <p className="font-medium text-text-main mb-1">How to generate your API Token:</p>
@@ -887,23 +892,23 @@ export default function ProxyPoolsPage() {
             label="Account ID"
             value={cloudflareForm.accountId}
             onChange={(e) => setCloudflareForm((prev) => ({ ...prev, accountId: e.target.value }))}
-            placeholder="your-cloudflare-account-id"
-            hint={<>Found on the right side of the Cloudflare dashboard overview page.</>}
+            placeholder="account-id-1 | account-id-2"
+            hint={<>Found on the right side of the Cloudflare dashboard overview page. Use <b>|</b> to separate multiple accounts for batch deploy.</>}
           />
           <Input
             label="API Token"
             value={cloudflareForm.apiToken}
             onChange={(e) => setCloudflareForm((prev) => ({ ...prev, apiToken: e.target.value }))}
-            placeholder="your-cloudflare-api-token"
-            hint={<>Requires "Workers Scripts: Edit" permission. <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Get token →</a></>}
+            placeholder="api-token-1 | api-token-2"
+            hint={<>Requires &quot;Workers Scripts: Edit&quot; permission. Use <b>|</b> to separate multiple tokens (one per account, same order). <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Get token →</a></>}
             type="password"
           />
           <Input
-            label="Worker Name"
+            label="Worker Name(s)"
             value={cloudflareForm.projectName}
             onChange={(e) => setCloudflareForm((prev) => ({ ...prev, projectName: e.target.value }))}
-            placeholder="my-relay"
-            hint="Unique name for your Cloudflare Worker. Leave empty for auto-generated name."
+            placeholder="relay-1 | relay-2 (or leave empty for auto-generated)"
+            hint="Unique name for your Cloudflare Worker. Use | to separate multiple names (one per account). Leave empty for auto-generated names."
           />
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Button

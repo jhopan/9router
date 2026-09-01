@@ -583,6 +583,10 @@ export function parseQuotaData(provider, data) {
               used: quota.used || 0,
               total: quota.total || 0,
               resetAt: quota.resetAt || null,
+              // Balance-style quotas (e.g. agentrouter) carry a dollar amount
+              ...(quota.dollarBalance != null
+                ? { dollarBalance: quota.dollarBalance, unlimited: quota.unlimited === true }
+                : {}),
             });
           });
         }

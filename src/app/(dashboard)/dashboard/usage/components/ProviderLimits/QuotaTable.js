@@ -176,7 +176,7 @@ export default function QuotaTable({
               {/* Progress + used/total */}
               <div className={`min-w-0 flex-1 ${compact ? "space-y-1" : "space-y-1.5"}`}>
                 {!isUnlimited && (
-                <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
+                <div className={`${compact ? "h-1" : "h-1.5"} ${quota.dollarBalance != null ? "w-16 shrink-0" : ""} rounded-full overflow-hidden border ${colors.bgLight} ${
                   quota.remaining === 0 ? "border-black/10 dark:border-white/10" : "border-transparent"
                 }`}>
                   <div
@@ -190,17 +190,25 @@ export default function QuotaTable({
                   <span
                     className="text-text-muted truncate"
                     title={
-                      isUnlimited
-                        ? `${quota.used.toLocaleString()} used · Unlimited`
-                        : `${quota.used.toLocaleString()} / ${quota.total > 0 ? quota.total.toLocaleString() : "∞"}`
+                      quota.dollarBalance != null
+                        ? `$${quota.dollarBalance.toFixed(2)} remaining`
+                        : isUnlimited
+                          ? `${quota.used.toLocaleString()} used · Unlimited`
+                          : `${quota.used.toLocaleString()} / ${quota.total > 0 ? quota.total.toLocaleString() : "∞"}`
                     }
                   >
-                    {isUnlimited
-                      ? `${quota.used.toLocaleString()} used · Unlimited`
-                      : `${quota.used.toLocaleString()} / ${quota.total > 0 ? quota.total.toLocaleString() : "∞"}`}
+                    {quota.dollarBalance != null
+                      ? `$${quota.dollarBalance.toFixed(2)} remaining`
+                      : isUnlimited
+                        ? `${quota.used.toLocaleString()} used · Unlimited`
+                        : `${quota.used.toLocaleString()} / ${quota.total > 0 ? quota.total.toLocaleString() : "∞"}`}
                   </span>
                   <span className={`font-medium ${isUnlimited ? "text-green-600 dark:text-green-400" : colors.text} shrink-0`}>
-                    {isUnlimited ? "Unlimited" : `${quota.remaining}%`}
+                    {quota.dollarBalance != null
+                      ? (quota.dollarBalance > 0 ? "Active" : "Exhausted")
+                      : isUnlimited
+                        ? "Unlimited"
+                        : `${quota.remaining}%`}
                   </span>
                 </div>
               </div>
