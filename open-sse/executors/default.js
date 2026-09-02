@@ -159,7 +159,7 @@ export class DefaultExecutor extends BaseExecutor {
     }
 
     // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
-    if (this.provider?.startsWith?.("anthropic-compatible-")) {
+    if (this.provider?.startsWith?.("anthropic-compatible-") || this.provider === "agentrouter") {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
       const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
       if (!isOfficialAnthropic) {

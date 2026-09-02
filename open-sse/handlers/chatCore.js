@@ -245,7 +245,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Claude tool schema requires `type` to be explicitly set; strict gateways (e.g., MiniMax)
   // reject legacy payloads that omit it with HTTP 400. Default to "custom" when missing.
-  if (finalFormat === FORMATS.CLAUDE && Array.isArray(translatedBody.tools)) {
+  // AgentRouter (/v1/messages, Anthropic relay) rejects the synthetic `type: "custom"`
+  // (only accepts real Anthropic function tools `{name, input_schema}` or server tools
+  // `web_search_*`), so skip it — appending `custom` there causes:
+  //   "tools[0]: unknown variant 'custom', expected 'web_search_20250305' or 'web_search_20260209'"
+  if (finalFormat === FORMATS.CLAUDE && provider !== "agentrouter" && Array.isArray(translatedBody.tools)) {
     translatedBody.tools = defaultClaudeToolType(translatedBody.tools);
   }
 
