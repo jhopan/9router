@@ -9,6 +9,7 @@ import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLin
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
 import { wrapAgentRouterResponseStream } from "../../translator/concerns/agentrouterResponseTranslate.js";
+import { shouldTranslateProvider } from "../../translator/concerns/translateConfig.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
 // Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
@@ -82,11 +83,11 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey });
 
-  // AgentRouter replies in English; user wants Indonesian. Buffer the whole
-  // Claude SSE stream, translate the text to Indonesian, re-emit as a fresh
-  // stream before it reaches the client. Fail-open: passes original on error.
+  // Translate adapter: providers listed in translateConfig.providers get their
+  // response stream re-written to Indonesian (language gate). Fail-open.
+  const translateProvider = await shouldTranslateProvider(provider);
   let sseBody = providerResponse.body;
-  if (provider === "agentrouter") {
+  if (translateProvider) {
     try {
       sseBody = await wrapAgentRouterResponseStream(providerResponse, log);
     } catch (err) {

@@ -9,43 +9,57 @@
  * never overrides a combo that already has a member covering the capability.
  */
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
+import { getComboByName } from "@/lib/localDb";
 
 const CAPABILITY_KEYS = ["vision", "pdf", "audioInput", "videoInput"];
 const HARD_CAPS = new Set(CAPABILITY_KEYS);
 const DEFAULT_FALLBACK_MODEL = "oc/mimo-v2.5-free";
 
-// Normalize a capability entry to { enabled, roundRobin, models }. Backward-compat:
-// accept the legacy array form [{model, enabled}] (treated as enabled, fallback).
+// Normalize a capability entry to { enabled, roundRobin, comboName, models }.
+// Accepted shapes:
+//   { enabled, comboName, roundRobin }   — combo-driven (combo holds models + multi-account)
+//   { enabled, roundRobin, models[] }    — legacy inline pool
+//   [ { model, enabled }, ... ]          — legacy array form
+//   { enabled, roundRobin, combo, models } — comboName alias
 function normalizeCapEntry(entry) {
   if (Array.isArray(entry)) {
-    return { enabled: true, roundRobin: false, models: entry.map((e) => e?.model || e).filter(Boolean) };
+    return { enabled: true, roundRobin: false, comboName: "", models: entry.map((e) => e?.model || e).filter(Boolean) };
   }
   if (entry && typeof entry === "object") {
+    const comboName = String(entry.comboName || entry.combo || "").trim();
     return {
       enabled: entry.enabled !== false,
       roundRobin: !!entry.roundRobin,
+      comboName,
       models: Array.isArray(entry.models) ? entry.models.filter(Boolean) : [],
     };
   }
-  return { enabled: false, roundRobin: false, models: [] };
+  return { enabled: false, roundRobin: false, comboName: "", models: [] };
 }
 
-// Resolve one capability's full config. Enabled pools with no models fall back
-// to DEFAULT_FALLBACK_MODEL so the toggle is never a no-op.
-export function getCapacityAdapterConfig(cap, settings) {
+// Resolve a capability entry; if comboName is set, expand to the combo's model list.
+export async function getCapacityAdapterConfig(cap, settings) {
   const entry = normalizeCapEntry(settings?.capacityAdapter?.[cap]);
-  if (entry.enabled && entry.models.length === 0) {
-    return { ...entry, models: [DEFAULT_FALLBACK_MODEL] };
+  let models = entry.models;
+  if (entry.comboName) {
+    const combo = await getComboByName(entry.comboName);
+    if (combo && Array.isArray(combo.models)) {
+      models = combo.models.filter(Boolean);
+    }
   }
-  return entry;
+  // Enabled pools with no models fall back to DEFAULT_FALLBACK_MODEL so the toggle is never a no-op.
+  if (entry.enabled && models.length === 0) {
+    models = [DEFAULT_FALLBACK_MODEL];
+  }
+  return { enabled: entry.enabled, roundRobin: entry.roundRobin, comboName: entry.comboName, models };
 }
 
 // Flatten enabled models across all capability pools, in priority order, deduped.
-export function getCapacityAdapterModels(settings) {
+export async function getCapacityAdapterModels(settings) {
   const seen = new Set();
   const models = [];
   for (const cap of CAPABILITY_KEYS) {
-    const { enabled, models: pool } = getCapacityAdapterConfig(cap, settings);
+    const { enabled, models: pool } = await getCapacityAdapterConfig(cap, settings);
     if (!enabled) continue;
     for (const m of pool) {
       if (!seen.has(m)) {
@@ -58,17 +72,17 @@ export function getCapacityAdapterModels(settings) {
 }
 
 // Strategy for a capability: "round-robin" when enabled+roundRobin, else "fallback".
-export function getCapacityAdapterStrategy(cap, settings) {
-  const { enabled, roundRobin } = getCapacityAdapterConfig(cap, settings);
+export async function getCapacityAdapterStrategy(cap, settings) {
+  const { enabled, roundRobin } = await getCapacityAdapterConfig(cap, settings);
   return enabled && roundRobin ? "round-robin" : "fallback";
 }
 
 // Strategy from the request's required capabilities: picks the first capability
 // whose adapter pool is enabled and can satisfy a hard requirement.
-export function getActiveAdapterStrategy(requiredCapabilities, settings) {
+export async function getActiveAdapterStrategy(requiredCapabilities, settings) {
   const hard = [...(requiredCapabilities || [])].filter((c) => HARD_CAPS.has(c));
   for (const cap of hard) {
-    const { enabled, models } = getCapacityAdapterConfig(cap, settings);
+    const { enabled, models } = await getCapacityAdapterConfig(cap, settings);
     if (!enabled || models.length === 0) continue;
     return getCapacityAdapterStrategy(cap, settings);
   }
@@ -89,12 +103,12 @@ function modelSatisfies(modelStr, requiredHard) {
 // original models follow as fallback. Leaves `models` untouched when the
 // original list already covers it (combo.js's reorderByCapabilities handles
 // that case via autoSwitch).
-export function augmentModelsWithCapacityAdapter(models, requiredCapabilities, settings) {
+export async function augmentModelsWithCapacityAdapter(models, requiredCapabilities, settings) {
   const hard = [...(requiredCapabilities || [])].filter((c) => HARD_CAPS.has(c));
   if (hard.length === 0 || !Array.isArray(models) || models.length === 0) return models;
   if (models.some((m) => modelSatisfies(m, hard))) return models;
 
-  const pool = getCapacityAdapterModels(settings).filter((m) => !models.includes(m) && modelSatisfies(m, hard));
+  const pool = (await getCapacityAdapterModels(settings)).filter((m) => !models.includes(m) && modelSatisfies(m, hard));
   if (pool.length === 0) return models;
   return [...pool, ...models];
 }

@@ -4,6 +4,7 @@ import { applyThinking, extractThinking, stripThinkingSuffix } from "../translat
 import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
 import { translateAgentRouterBody } from "../translator/concerns/agentrouterTranslate.js";
+import { shouldTranslateProvider } from "../translator/concerns/translateConfig.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
@@ -298,10 +299,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
 
-  // AgentRouter only accepts input in Mandarin/English/French/German/Russian.
-  // Translate user turns to English before dispatch to avoid 400 content-blocked
-  // false-positives on Indonesian/mixed-language prompts. Fail-open.
-  if (provider === "agentrouter") {
+  // Translate adapter: providers listed in translateConfig.providers get their
+  // user turns rewritten to English before dispatch (language gate). Fail-open.
+  const translateProvider = await shouldTranslateProvider(provider);
+  if (translateProvider) {
     try {
       await translateAgentRouterBody(translatedBody, log);
     } catch (err) {

@@ -212,6 +212,28 @@ function importLegacyDetails(adapter, data) {
   }
 }
 
+// ─── Default combo seed (idempotent: only creates combos that don't exist) ──
+// Creates empty `image` + `translate` combos on fresh install / first boot so
+// the Vision-Adapter (combo-driven) and Translate Adapter have a placeholder to
+// reference. Never overwrites a combo the user already created. Empty models is
+// deliberate: fresh install has no providers yet, so forcing models would be invalid.
+const DEFAULT_COMBOS = [
+  { name: "image", models: [] },      // Vision Adapter target
+  { name: "translate", models: [] },  // Translate Adapter target
+];
+
+function seedDefaultCombos(adapter) {
+  const now = new Date().toISOString();
+  for (const combo of DEFAULT_COMBOS) {
+    const row = adapter.get(`SELECT id FROM combos WHERE name = ?`, [combo.name]);
+    if (row) continue; // user already has one — leave it
+    adapter.run(
+      `INSERT OR IGNORE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+      [`seed-${combo.name}`, combo.name, null, stringifyJson(combo.models), now, now]
+    );
+  }
+}
+
 // ─── Main entry ──────────────────────────────────────────────────────────
 export async function runMigrationOnce(adapter) {
   if (_migratedAdapters.has(adapter)) return;
@@ -248,6 +270,14 @@ export async function runMigrationOnce(adapter) {
 
   // 2. Additive sync (auto add missing columns/indexes declared in TABLES)
   syncSchemaFromTables(adapter);
+
+  // 2.5 Seed default combos (image/translate) — idempotent, never overwrites
+  // user-created combos. Runs before legacy import so imported data wins.
+  try {
+    seedDefaultCombos(adapter);
+  } catch (e) {
+    console.warn(`[DB][migrate] default combo seed failed (continuing): ${e.message}`);
+  }
 
   // Stamp the schema version we just reached so future boots skip re-backup.
   setMetaSync(adapter, "backupSchemaVersion", SCHEMA_VERSION);

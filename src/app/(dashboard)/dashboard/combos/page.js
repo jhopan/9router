@@ -21,8 +21,7 @@ const CAPACITY_ADAPTER_CAPS = [
   // pdf, videoInput temporarily hidden — no translator support yet for those blocks.
   { key: "audioInput", label: "Audio", icon: "graphic_eq", desc: "Audio input" },
 ];
-const DEFAULT_FALLBACK_MODEL = "oc/mimo-v2.5-free";
-const EMPTY_CAP_ENTRY = { enabled: true, roundRobin: false, models: [] };
+const EMPTY_CAP_ENTRY = { enabled: true, roundRobin: false, comboName: "", models: [] };
 const EMPTY_CAPACITY_ADAPTER = {
   vision: { ...EMPTY_CAP_ENTRY },
   pdf: { ...EMPTY_CAP_ENTRY },
@@ -32,12 +31,13 @@ const EMPTY_CAPACITY_ADAPTER = {
 // Backward-compat: legacy stored form was an array of {model, enabled}.
 function normalizeCapEntry(entry) {
   if (Array.isArray(entry)) {
-    return { enabled: true, roundRobin: false, models: entry.map((e) => e?.model || e).filter(Boolean) };
+    return { enabled: true, roundRobin: false, comboName: "", models: entry.map((e) => e?.model || e).filter(Boolean) };
   }
   if (entry && typeof entry === "object") {
     return {
       enabled: entry.enabled !== false,
       roundRobin: !!entry.roundRobin,
+      comboName: String(entry.comboName || entry.combo || "").trim(),
       models: Array.isArray(entry.models) ? entry.models.filter(Boolean) : [],
     };
   }
@@ -275,6 +275,7 @@ export default function CombosPage() {
         onChange={handleSetCapacityAdapter}
         activeProviders={activeProviders}
         getCaps={getCaps}
+        combos={combos}
       />
 
       {/* Translate Adapter */}
@@ -442,14 +443,14 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
   );
 }
 
-function CapacityAdapterSection({ capacityAdapter, onChange, activeProviders, getCaps }) {
+function CapacityAdapterSection({ capacityAdapter, onChange, activeProviders, getCaps, combos }) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className="text-sm font-medium">Vision Adapter</p>
           <p className="text-xs text-text-muted mt-0.5">
-            Your model can&apos;t read image/audio? Auto-switches to a model in the pool below.
+            Your model can&apos;t read image/audio? Auto-switches to the chosen combo&apos;s models.
           </p>
           <ul className="mt-1.5 text-[11px] text-text-muted flex flex-col gap-0.5">
             <li><span className="font-medium text-text-main">Vision</span> — images (png, jpg, webp, …)</li>
@@ -466,6 +467,7 @@ function CapacityAdapterSection({ capacityAdapter, onChange, activeProviders, ge
             onChange={(entry) => onChange({ ...capacityAdapter, [cap.key]: entry })}
             activeProviders={activeProviders}
             getCaps={getCaps}
+            combos={combos}
           />
         ))}
       </div>
@@ -473,34 +475,16 @@ function CapacityAdapterSection({ capacityAdapter, onChange, activeProviders, ge
   );
 }
 
-function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) {
-  const [showModelSelect, setShowModelSelect] = useState(false);
-  const { enabled, roundRobin, models } = entry;
+function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps, combos }) {
+  const { enabled, comboName, models } = entry;
 
   const patch = (p) => onChange({ ...entry, ...p });
 
-  const handleAdd = (model) => {
-    if (models.includes(model.value)) return;
-    patch({ models: [...models, model.value] });
-  };
-
-  const handleRemove = (index) => {
-    const next = models.filter((_, i) => i !== index);
-    patch({ models: next.length === 0 ? [DEFAULT_FALLBACK_MODEL] : next });
-  };
-
-  const handleMove = (index, delta) => {
-    const target = index + delta;
-    if (target < 0 || target >= models.length) return;
-    const next = [...models];
-    [next[index], next[target]] = [next[target], next[index]];
-    patch({ models: next });
-  };
+  const comboOptions = (combos || []).filter((c) => !c.kind || c.kind === "llm");
 
   return (
     <Card padding="sm" className={`group ${!enabled ? "opacity-50" : ""}`}>
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        {/* Master toggle + icon + label + chips */}
         <div className="flex min-w-0 flex-1 items-start gap-2.5 sm:items-center">
           <Toggle
             checked={enabled}
@@ -515,72 +499,26 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
               <code className="font-mono text-sm font-medium">{cap.label}</code>
               <span className="text-[10px] text-text-muted">— {cap.desc}</span>
             </div>
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
-              {models.length === 0 ? (
-                <span className="text-xs text-text-muted italic">No models</span>
-              ) : (
-                models.slice(0, 3).map((model, index) => (
-                  <code
-                    key={`${model}-${index}`}
-                    className="group/chip inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5"
-                  >
-                    <span>{model}</span>
-                    <CapacityBadges caps={getCaps?.(model)} />
-                    <button onClick={() => handleMove(index, -1)} disabled={index === 0} className={`leading-none opacity-0 group-hover/chip:opacity-100 ${index === 0 ? "text-text-muted/20" : "text-text-muted hover:text-primary"}`}>
-                      <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
-                    </button>
-                    <button onClick={() => handleMove(index, 1)} disabled={index === models.length - 1} className={`leading-none opacity-0 group-hover/chip:opacity-100 ${index === models.length - 1 ? "text-text-muted/20" : "text-text-muted hover:text-primary"}`}>
-                      <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
-                    </button>
-                    <button onClick={() => handleRemove(index)} className="leading-none opacity-0 group-hover/chip:opacity-100 text-text-muted hover:text-red-500">
-                      <span className="material-symbols-outlined text-[12px]">close</span>
-                    </button>
-                  </code>
-                ))
-              )}
-              {models.length > 3 && (
-                <span className="text-[10px] text-text-muted">+{models.length - 3} more</span>
-              )}
+
+            {/* Combo selector — the combo (penjual) holds the models + fallback/round-robin + multi-account */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <label className="text-[10px] text-text-muted">Combo:</label>
+              <select
+                value={comboName || ""}
+                onChange={(e) => patch({ comboName: e.target.value })}
+                disabled={!enabled}
+                className="h-7 rounded-md border border-black/10 bg-black/[0.02] px-2 text-xs text-text-primary outline-none transition-colors hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10"
+                aria-label={`${cap.label} combo`}
+              >
+                <option value="">None</option>
+                {comboOptions.map((c) => (
+                  <option key={c.name} value={c.name}>{c.name}</option>
+                ))}
+              </select>
             </div>
           </div>
         </div>
-
-        {/* Actions: Round-robin toggle + Add Model */}
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3 sm:shrink-0">
-          <label className="flex items-center gap-1.5 text-xs text-text-muted cursor-pointer select-none">
-            <Toggle
-              checked={roundRobin}
-              onChange={(v) => patch({ roundRobin: v })}
-              disabled={!enabled}
-              aria-label={`Round-robin ${cap.label} adapter`}
-            />
-            <span>Round</span>
-          </label>
-          <Button
-            icon="add"
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowModelSelect(true)}
-            disabled={!enabled}
-            title={`Add ${cap.label} model`}
-          >
-            Add Model
-          </Button>
-        </div>
       </div>
-
-      {showModelSelect && (
-        <ModelSelectModal
-          isOpen={showModelSelect}
-          onClose={() => setShowModelSelect(false)}
-          onSelect={handleAdd}
-          activeProviders={activeProviders}
-          title={`Add ${cap.label} Model`}
-          addedModelValues={models}
-          capFilter={cap.key}
-          closeOnSelect={false}
-        />
-      )}
     </Card>
   );
 }
