@@ -80,10 +80,10 @@ npm install -g https://github.com/jhopan/9router/releases/latest/download/9route
 9router
 ```
 
-**Or install a specific version** (e.g. `v0.5.60`):
+**Or install a specific version** (e.g. `v0.5.59.1`):
 
 ```bash
-npm install -g https://github.com/jhopan/9router/releases/download/v0.5.60/9router.tgz
+npm install -g https://github.com/jhopan/9router/releases/download/v0.5.59.1/9router.tgz
 9router
 ```
 
