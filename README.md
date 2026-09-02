@@ -76,7 +76,7 @@ Result: Never stop coding, minimal cost + 20-40% token savings via RTK
 **1. Install from latest release (always the newest build):**
 
 ```bash
-npm install -g https://github.com/jhopan/9router/releases/latest/download/9router.tgz
+npm install -g https://github.com/jhopan/9router/releases/latest/download/9router-latest.tgz
 9router
 ```
 

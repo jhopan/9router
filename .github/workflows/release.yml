@@ -39,6 +39,7 @@ jobs:
         run: |
           find .. -maxdepth 1 -name "9router-*.tgz" -exec mv {} . \;
           cp 9router-*.tgz 9router.tgz
+          cp 9router.tgz 9router-latest.tgz
           ls -la *.tgz
 
       - name: Resolve version
@@ -99,4 +100,4 @@ jobs:
 
           For a specific version, see the [releases page](https://github.com/jhopan/9router/releases)." \
             --latest \
-            9router.tgz "9router-${VERSION}.tgz"
+            9router.tgz "9router-${VERSION}.tgz" "9router-latest.tgz"
