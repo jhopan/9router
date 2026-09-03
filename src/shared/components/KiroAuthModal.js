@@ -22,6 +22,9 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
   const [autoDetected, setAutoDetected] = useState(false);
   const [idcCredentials, setIdcCredentials] = useState(null);
   const [grabSource, setGrabSource] = useState(null); // "cli" | "ide" — token grab command picker
+  const [grabOs, setGrabOs] = useState(
+    typeof navigator !== "undefined" && /Win/i.test(navigator.userAgent) ? "win" : "lin"
+  ); // preselect tab by browser, user can switch
 
   // Auto-detect token when import method is selected
   useEffect(() => {
@@ -535,23 +538,48 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                     </Button>
                   </div>
                   {grabSource && (
-                    <div className="flex items-center gap-2">
-                      <code className="flex-1 block text-[11px] leading-4 font-mono bg-background border border-border rounded-lg px-2 py-1.5 break-all select-all">
-                        {grabSource === "cli"
-                          ? "curl -sL https://raw.githubusercontent.com/jhopan/9router/master/scripts/kiro-token-grab.mjs -o grab.mjs && node grab.mjs --print"
-                          : "node -e \"console.log(JSON.parse(require('fs').readFileSync(require('os').homedir()+'/.aws/sso/cache/kiro-auth-token.json','utf8')).refreshToken)\""}
-                      </code>
-                      <Button
-                        variant="ghost"
-                        className="!px-2 !py-1 shrink-0"
-                        icon="content_copy"
-                        onClick={() => {
-                          const cmd = grabSource === "cli"
-                            ? "curl -sL https://raw.githubusercontent.com/jhopan/9router/master/scripts/kiro-token-grab.mjs -o grab.mjs && node grab.mjs --print"
-                            : "node -e \"console.log(JSON.parse(require('fs').readFileSync(require('os').homedir()+'/.aws/sso/cache/kiro-auth-token.json','utf8')).refreshToken)\"";
-                          navigator.clipboard?.writeText(cmd);
-                        }}
-                      />
+                    <div className="flex flex-col gap-2">
+                      <div className="flex gap-1">
+                        <Button
+                          variant={grabOs === "win" ? "primary" : "ghost"}
+                          onClick={() => setGrabOs("win")}
+                          className="!px-2 !py-0.5 text-[11px]"
+                        >
+                          Windows (PowerShell)
+                        </Button>
+                        <Button
+                          variant={grabOs === "lin" ? "primary" : "ghost"}
+                          onClick={() => setGrabOs("lin")}
+                          className="!px-2 !py-0.5 text-[11px]"
+                        >
+                          Linux / macOS
+                        </Button>
+                      </div>
+                      {(() => {
+                        // Windows PowerShell 5.1 has no '&&'; use ';' separator and curl.exe
+                        // (PS aliases curl -> Invoke-WebRequest, so be explicit).
+                        const cmd =
+                          grabOs === "win"
+                            ? grabSource === "cli"
+                              ? "curl.exe -sL https://raw.githubusercontent.com/jhopan/9router/master/scripts/kiro-token-grab.mjs -o grab.mjs; node grab.mjs --print"
+                              : "node -e \"console.log(JSON.parse(require('fs').readFileSync(require('os').homedir()+'/.aws/sso/cache/kiro-auth-token.json','utf8')).refreshToken)\""
+                            : grabSource === "cli"
+                              ? "curl -sL https://raw.githubusercontent.com/jhopan/9router/master/scripts/kiro-token-grab.mjs -o grab.mjs && node grab.mjs --print"
+                              : "node -e \"console.log(JSON.parse(require('fs').readFileSync(require('os').homedir()+'/.aws/sso/cache/kiro-auth-token.json','utf8')).refreshToken)\"";
+                        return (
+                          <div className="flex items-center gap-2">
+                            <code className="flex-1 block text-[11px] leading-4 font-mono bg-background border border-border rounded-lg px-2 py-1.5 break-all select-all">
+                              {cmd}
+                            </code>
+                            <Button
+                              variant="ghost"
+                              className="!px-2 !py-1 shrink-0"
+                              icon="content_copy"
+                              onClick={() => navigator.clipboard?.writeText(cmd)}
+                            />
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
