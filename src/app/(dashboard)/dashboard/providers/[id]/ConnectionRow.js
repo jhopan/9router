@@ -90,7 +90,13 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
       return;
     }
     const rect = proxyDropdownRef.current?.getBoundingClientRect();
-    if (rect) setProxyMenuPos({ right: window.innerWidth - rect.right, top: rect.bottom + 4 });
+    if (!rect) return;
+    const MENU_H = 288; // matches max-h; estimate for flip decision
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const top = spaceBelow >= MENU_H + 8
+      ? rect.bottom + 6   // natural: below the control, small breathing gap
+      : Math.max(8, rect.top - MENU_H - 6); // flip above when cramped at viewport bottom
+    setProxyMenuPos({ right: window.innerWidth - rect.right, top });
     setShowProxyDropdown(true);
   };
 
@@ -264,11 +270,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 <div
                   ref={proxyMenuRef}
                   style={{ position: "fixed", right: proxyMenuPos.right, top: proxyMenuPos.top }}
-                  className="z-[9999] max-w-[78vw] min-w-[160px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-bg py-1 shadow-lg"
+                  className="z-[9999] max-w-[78vw] min-w-[160px] max-h-[288px] overflow-y-auto overscroll-contain rounded-lg border border-border bg-bg py-1 shadow-lg"
                 >
                   <button
                     onClick={() => handleSelectProxy("__none__")}
-                    className={`w-full text-left px-3 py-0.5 text-[13px] leading-tight hover:bg-black/5 dark:hover:bg-white/5 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}
+                    className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}
                   >
                     None
                   </button>
@@ -276,7 +282,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                     <button
                       key={pool.id}
                       onClick={() => handleSelectProxy(pool.id)}
-                      className={`w-full text-left px-3 py-0.5 text-[13px] leading-tight hover:bg-black/5 dark:hover:bg-white/5 ${boundProxyPoolId === pool.id ? "text-primary font-medium" : "text-text-main"}`}
+                      className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${boundProxyPoolId === pool.id ? "text-primary font-medium" : "text-text-main"}`}
                     >
                       {pool.name}
                     </button>
