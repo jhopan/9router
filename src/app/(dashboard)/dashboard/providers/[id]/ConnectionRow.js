@@ -269,12 +269,12 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
               {showProxyDropdown && proxyMenuPos && typeof document !== "undefined" && createPortal(
                 <div
                   ref={proxyMenuRef}
-                  style={{ position: "fixed", right: proxyMenuPos.right, top: proxyMenuPos.top }}
-                  className="z-[9999] max-w-[78vw] min-w-[160px] max-h-[288px] overflow-y-auto overscroll-contain rounded-lg border border-border bg-bg py-1 shadow-lg"
+                  style={{ position: "fixed", right: proxyMenuPos.right, top: proxyMenuPos.top, width: "max-content" }}
+                  className="z-[9999] max-w-[78vw] max-h-[288px] overflow-y-auto overscroll-contain rounded-lg border border-border bg-bg py-1 shadow-lg"
                 >
                   <button
                     onClick={() => handleSelectProxy("__none__")}
-                    className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}
+                    className={`block w-full whitespace-nowrap px-3 py-1.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}
                   >
                     None
                   </button>
@@ -282,7 +282,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                     <button
                       key={pool.id}
                       onClick={() => handleSelectProxy(pool.id)}
-                      className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${boundProxyPoolId === pool.id ? "text-primary font-medium" : "text-text-main"}`}
+                      className={`block w-full whitespace-nowrap px-3 py-1.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5 ${boundProxyPoolId === pool.id ? "text-primary font-medium" : "text-text-main"}`}
                     >
                       {pool.name}
                     </button>
