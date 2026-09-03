@@ -64,7 +64,12 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
       const inMenu = proxyMenuRef.current?.contains(e.target);
       if (!inBtn && !inMenu) setShowProxyDropdown(false);
     };
-    const close = () => setShowProxyDropdown(false);
+    // Close on page scroll/resize, but keep the menu open when the scroll event
+    // originates INSIDE the menu itself (the list is scrollable when tall).
+    const close = (e) => {
+      if (proxyMenuRef.current && e?.target && proxyMenuRef.current.contains(e.target)) return;
+      setShowProxyDropdown(false);
+    };
     document.addEventListener("mousedown", handler);
     window.addEventListener("scroll", close, true);
     window.addEventListener("resize", close);
@@ -259,11 +264,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 <div
                   ref={proxyMenuRef}
                   style={{ position: "fixed", right: proxyMenuPos.right, top: proxyMenuPos.top }}
-                  className="z-[9999] max-w-[78vw] min-w-[160px] rounded-lg border border-border bg-bg py-1 shadow-lg"
+                  className="z-[9999] max-w-[78vw] min-w-[160px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-bg py-1 shadow-lg"
                 >
                   <button
                     onClick={() => handleSelectProxy("__none__")}
-                    className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}
+                    className={`w-full text-left px-3 py-1 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}
                   >
                     None
                   </button>
@@ -271,7 +276,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                     <button
                       key={pool.id}
                       onClick={() => handleSelectProxy(pool.id)}
-                      className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${boundProxyPoolId === pool.id ? "text-primary font-medium" : "text-text-main"}`}
+                      className={`w-full text-left px-3 py-1 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${boundProxyPoolId === pool.id ? "text-primary font-medium" : "text-text-main"}`}
                     >
                       {pool.name}
                     </button>
