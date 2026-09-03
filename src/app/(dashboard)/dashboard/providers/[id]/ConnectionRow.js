@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
@@ -9,7 +10,14 @@ import CooldownTimer from "./CooldownTimer";
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
-  const proxyDropdownRef = useRef(null);
+  const proxyDropdownRef = useRef(null); // button wrapper
+  const proxyMenuRef = useRef(null); // portal menu (outside this DOM subtree)
+  // Portal-anchored dropdown: the connection list is a max-h/overflow-y-auto
+  // container, so an absolutely-positioned dropdown inside it gets clipped and
+  // the browser force-scrolls the container (the "page jumps/scrolls" bug on
+  // providers with short lists like B.AI/AgentRouter). Rendering fixed via a
+  // body portal escapes the overflow clip entirely.
+  const [proxyMenuPos, setProxyMenuPos] = useState(null);
 
   const proxyPoolMap = new Map((proxyPools || []).map((pool) => [pool.id, pool]));
   const boundProxyPoolId = connection.providerSpecificData?.proxyPoolId || null;
@@ -47,17 +55,39 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     proxyBadgeVariant = "error";
   }
 
-  // Close dropdown when clicking outside
+  // Close dropdown when clicking outside or on scroll/resize (portal menu lives
+  // outside the button wrapper, so check both refs).
   useEffect(() => {
     if (!showProxyDropdown) return;
     const handler = (e) => {
-      if (proxyDropdownRef.current && !proxyDropdownRef.current.contains(e.target)) {
-        setShowProxyDropdown(false);
-      }
+      const inBtn = proxyDropdownRef.current?.contains(e.target);
+      const inMenu = proxyMenuRef.current?.contains(e.target);
+      if (!inBtn && !inMenu) setShowProxyDropdown(false);
     };
+    const close = () => setShowProxyDropdown(false);
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
   }, [showProxyDropdown]);
+
+  // Open the menu anchored to the button: measure the button rect and remember
+  // it — the menu itself renders fixed-positioned in a body portal so it escapes
+  // the connection list's overflow-y-auto clip (the page-scrolls bug on
+  // providers whose connection list is short, e.g. a single connection).
+  const toggleProxyDropdown = () => {
+    if (showProxyDropdown) {
+      setShowProxyDropdown(false);
+      return;
+    }
+    const rect = proxyDropdownRef.current?.getBoundingClientRect();
+    if (rect) setProxyMenuPos({ right: window.innerWidth - rect.right, top: rect.bottom + 4 });
+    setShowProxyDropdown(true);
+  };
 
   const handleSelectProxy = async (poolId) => {
     setUpdatingProxy(true);
@@ -216,7 +246,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
           {(proxyPools || []).length > 0 && (
             <div className="relative" ref={proxyDropdownRef}>
               <button
-                onClick={() => setShowProxyDropdown((v) => !v)}
+                onClick={toggleProxyDropdown}
                 className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${hasAnyProxy ? "text-primary" : "text-text-muted hover:text-primary"}`}
                 disabled={updatingProxy}
               >
@@ -225,8 +255,12 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 </span>
                 <span className="text-[10px] leading-tight">Proxy</span>
               </button>
-              {showProxyDropdown && (
-                <div className="absolute right-0 top-full z-50 mt-1 max-w-[78vw] min-w-[160px] rounded-lg border border-border bg-bg py-1 shadow-lg">
+              {showProxyDropdown && proxyMenuPos && typeof document !== "undefined" && createPortal(
+                <div
+                  ref={proxyMenuRef}
+                  style={{ position: "fixed", right: proxyMenuPos.right, top: proxyMenuPos.top }}
+                  className="z-[9999] max-w-[78vw] min-w-[160px] rounded-lg border border-border bg-bg py-1 shadow-lg"
+                >
                   <button
                     onClick={() => handleSelectProxy("__none__")}
                     className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}
@@ -242,7 +276,8 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                       {pool.name}
                     </button>
                   ))}
-                </div>
+                </div>,
+                document.body
               )}
             </div>
           )}
