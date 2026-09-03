@@ -12,11 +12,13 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
   const [caps, setCaps] = useState(defaultCaps);
   const [testStatus, setTestStatus] = useState(null); // null | "testing" | "ok" | "error"
   const [testError, setTestError] = useState("");
+  const [fullTesting, setFullTesting] = useState(false);
+  const [fullResult, setFullResult] = useState(null); // { caps, detail } from detect-caps
   const [saving, setSaving] = useState(false);
 
   // Reset state when modal opens
   useEffect(() => {
-    if (isOpen) { setModelId(""); setCaps(defaultCaps()); setTestStatus(null); setTestError(""); }
+    if (isOpen) { setModelId(""); setCaps(defaultCaps()); setTestStatus(null); setTestError(""); setFullResult(null); }
   }, [isOpen]);
 
   // Strip provider's own alias prefix (e.g. "cc/model" -> "model" for cc provider)
@@ -42,6 +44,35 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
     } catch (err) {
       setTestStatus("error");
       setTestError(err.message);
+    }
+  };
+
+  // Test Full: probe the model for vision/reasoning and auto-apply to the toggles.
+  const handleTestFull = async () => {
+    const cleanId = stripAlias(modelId.trim());
+    if (!cleanId || fullTesting) return;
+    setFullTesting(true);
+    setFullResult(null);
+    try {
+      const res = await fetch("/api/models/detect-caps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: `${providerAlias}/${cleanId}` }),
+      });
+      const data = await res.json();
+      if (data.caps) {
+        // Auto-apply detected caps to the toggles (user can still override).
+        setCaps((prev) => ({ ...prev, vision: !!data.caps.vision, reasoning: !!data.caps.reasoning }));
+        setFullResult(data);
+      } else {
+        setTestStatus("error");
+        setTestError(data.error || "detect failed");
+      }
+    } catch (err) {
+      setTestStatus("error");
+      setTestError(err.message);
+    } finally {
+      setFullTesting(false);
     }
   };
 
@@ -84,6 +115,15 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
             >
               {testStatus === "testing" ? "Testing..." : "Test"}
             </Button>
+            <Button
+              variant="secondary"
+              icon="troubleshoot"
+              loading={fullTesting}
+              onClick={handleTestFull}
+              disabled={!modelId.trim() || fullTesting}
+            >
+              {fullTesting ? "Detecting..." : "Test Full"}
+            </Button>
           </div>
           <p className="text-xs text-text-muted mt-1">
             Sent to provider as: <code className="font-mono bg-sidebar px-1 rounded">{stripAlias(modelId.trim()) || "model-id"}</code>
@@ -105,6 +145,18 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
             ))}
           </div>
         </div>
+
+        {/* Test Full result */}
+        {fullResult && (
+          <div className="bg-sidebar/50 border border-accent/20 rounded-lg p-3 text-xs flex flex-col gap-1">
+            <span className="font-medium">Detected capabilities (auto-applied):</span>
+            <span>Vision: <b>{fullResult.caps.vision ? "YES" : "no"}</b> — {fullResult.detail.vision}</span>
+            <span>Reasoning: <b>{fullResult.caps.reasoning ? "YES" : "no"}</b> — {fullResult.detail.reasoning}</span>
+            {fullResult.detail.contextWindow ? (
+              <span className="text-text-muted">Context: ~{fullResult.detail.contextWindow.toLocaleString()} tokens{fullResult.detail.thinkingFormat ? ` · thinking: ${fullResult.detail.thinkingFormat}` : ""}</span>
+            ) : null}
+          </div>
+        )}
 
         {/* Test result */}
         {testStatus === "ok" && (
