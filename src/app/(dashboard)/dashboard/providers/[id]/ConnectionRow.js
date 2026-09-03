@@ -268,7 +268,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 >
                   <button
                     onClick={() => handleSelectProxy("__none__")}
-                    className={`w-full text-left px-3 py-1 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}
+                    className={`w-full text-left px-3 py-0.5 text-[13px] leading-tight hover:bg-black/5 dark:hover:bg-white/5 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}
                   >
                     None
                   </button>
@@ -276,7 +276,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                     <button
                       key={pool.id}
                       onClick={() => handleSelectProxy(pool.id)}
-                      className={`w-full text-left px-3 py-1 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${boundProxyPoolId === pool.id ? "text-primary font-medium" : "text-text-main"}`}
+                      className={`w-full text-left px-3 py-0.5 text-[13px] leading-tight hover:bg-black/5 dark:hover:bg-white/5 ${boundProxyPoolId === pool.id ? "text-primary font-medium" : "text-text-main"}`}
                     >
                       {pool.name}
                     </button>
