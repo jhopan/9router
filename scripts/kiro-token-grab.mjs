@@ -1,73 +1,135 @@
 #!/usr/bin/env node
 /**
- * kiro-token-grab.mjs — ambil refresh token Kiro IDE (login resmi) sekali jalan.
+ * kiro-token-grab.mjs — ambil refresh token Kiro (login resmi) sekali jalan.
  *
- * Sumber: %USERPROFILE%\.aws\sso\cache\kiro-auth-token.json
- * (Kiro IDE menulis token di sini setiap login/refresh — file hidup selama
- *  kamu sesekali membuka Kiro IDE.)
+ * Sumber (urut, pertama yang ketemu dipakai):
+ *   1. Kiro CLI : %LOCALAPPDATA%\Kiro-Cli\data.sqlite3 -> auth_kv["kirocli:social:token"]
+ *                 (butuh better-sqlite3 — otomatis dicari di node_modules sekitar)
+ *   2. Kiro IDE : %USERPROFILE%\.aws\sso\cache\kiro-auth-token.json (zero deps)
  *
  * Output:
- *   - Default: file "kiro-token-<tanggal>.txt" di Downloads
- *   - --print  : hanya print refreshToken ke stdout (buat pipe/copy)
- *   - --json   : print full JSON (accessToken + refreshToken + profileArn)
+ *   - Default: file "kiro-token-<cli|ide>-<tanggal>.txt" di Downloads
+ *   - --print  : hanya print refreshToken ke stdout (buat paste ke Import Token)
+ *   - --json   : print JSON penuh
  *
  * Jalankan: node kiro-token-grab.mjs [--print|--json]
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 
-const TOKEN_FILE = path.join(os.homedir(), ".aws", "sso", "cache", "kiro-auth-token.json");
+const req = createRequire(import.meta.url);
+
+function fromIde() {
+  const p = path.join(os.homedir(), ".aws", "sso", "cache", "kiro-auth-token.json");
+  if (!fs.existsSync(p)) return null;
+  try {
+    const j = JSON.parse(fs.readFileSync(p, "utf8"));
+    if (!j.refreshToken) return null;
+    return {
+      source: "ide",
+      refreshToken: j.refreshToken,
+      accessToken: j.accessToken || null,
+      profileArn: j.profileArn || null,
+      expiresAt: j.expiresAt || null,
+      provider: j.provider || null,
+      authMethod: j.authMethod || "social",
+    };
+  } catch {
+    return null;
+  }
+}
+
+// SQLite reader layer for the Kiro CLI source — zero install preferred:
+//   1. node:sqlite   — Node >= 22.5 builtin (no install, works everywhere modern)
+//   2. better-sqlite3 — optional dep of 9router/OmniRoute; resolved from nearby
+//                      node_modules / global npm install if present
+function openSqlite(dbPath) {
+  // 1. builtin node:sqlite (Node >= 22.5)
+  try {
+    const { DatabaseSync } = req("node:sqlite");
+    return new DatabaseSync(dbPath, { readOnly: true });
+  } catch {}
+  // 2. better-sqlite3 from any ancestor/global location
+  const candidates = [
+    "better-sqlite3",
+    path.join(process.cwd(), "node_modules", "better-sqlite3"),
+    path.join(os.homedir(), "AppData", "Roaming", "npm", "node_modules", "9router", "app", "node_modules", "better-sqlite3"),
+  ];
+  for (const c of candidates) {
+    try {
+      const Database = req(c);
+      return new Database(dbPath, { readonly: true });
+    } catch {}
+  }
+  return null;
+}
+
+function fromCli() {
+  const p = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Kiro-Cli", "data.sqlite3");
+  if (!fs.existsSync(p)) return null;
+  const db = openSqlite(p);
+  if (!db) return null; // caller falls back to IDE
+  try {
+    const row = db.prepare("SELECT value FROM auth_kv WHERE key = ?").get("kirocli:social:token");
+    db.close();
+    if (!row) return null;
+    const j = JSON.parse(row.value);
+    if (!j.refresh_token) return null;
+    return {
+      source: "cli",
+      refreshToken: j.refresh_token,
+      accessToken: j.access_token || null,
+      profileArn: j.profile_arn || null,
+      expiresAt: j.expires_at || null,
+      provider: j.provider || null,
+      authMethod: "social",
+    };
+  } catch {
+    try { db.close(); } catch {}
+    return null;
+  }
+}
 
 function main() {
-  if (!fs.existsSync(TOKEN_FILE)) {
-    console.error("Token Kiro IDE tidak ditemukan di:");
-    console.error("  " + TOKEN_FILE);
+  // CLI first (ringan, token paling segar kalau CLI dipakai harian); IDE fallback (zero deps).
+  const token = fromCli() || fromIde();
+
+  if (!token) {
+    console.error("Token Kiro tidak ditemukan. Dicari di:");
+    console.error("  CLI: %LOCALAPPDATA%/Kiro-Cli/data.sqlite3 (auth_kv)");
+    console.error("  IDE: ~/.aws/sso/cache/kiro-auth-token.json");
     console.error("");
-    console.error("Pastikan kamu sudah login di Kiro IDE (login Google/Builder ID), lalu coba lagi.");
+    console.error("Login dulu di Kiro CLI atau Kiro IDE, lalu coba lagi.");
+    console.error("(Sumber CLI butuh better-sqlite3 ter-install di sekitar; tanpa itu otomatis pakai sumber IDE.)");
     process.exit(1);
   }
-
-  let j;
-  try {
-    j = JSON.parse(fs.readFileSync(TOKEN_FILE, "utf8"));
-  } catch (e) {
-    console.error("File token ada tapi rusak/tidak terbaca: " + e.message);
-    process.exit(1);
-  }
-
-  if (!j.refreshToken) {
-    console.error("File token tidak berisi refreshToken — login ulang di Kiro IDE.");
-    process.exit(1);
-  }
-
-  // Cek kedaluwarsa access token (info saja; refreshToken biasanya jauh lebih panjang umurnya)
-  const expired = j.expiresAt ? new Date(j.expiresAt) < new Date() : null;
 
   if (process.argv.includes("--json")) {
-    console.log(JSON.stringify(j, null, 2));
+    console.log(JSON.stringify(token, null, 2));
     return;
   }
 
   if (process.argv.includes("--print")) {
-    console.log(j.refreshToken);
+    console.log(token.refreshToken);
     return;
   }
 
-  // Default: simpan ke Downloads
   const stamp = new Date().toISOString().slice(0, 10);
-  const outPath = path.join(os.homedir(), "Downloads", `kiro-token-${stamp}.txt`);
+  const outPath = path.join(os.homedir(), "Downloads", `kiro-token-${token.source}-${stamp}.txt`);
+  const expired = token.expiresAt ? new Date(token.expiresAt) < new Date() : null;
   const out = [
-    `Kiro IDE token (login resmi via ${j.provider || "?"} / ${j.authMethod || "?"})`,
+    `Kiro token (sumber: Kiro ${token.source.toUpperCase()}, login ${token.provider || "?"} / ${token.authMethod || "social"})`,
     `Diambil: ${new Date().toISOString()}`,
     `Access token expired: ${expired === null ? "?" : expired ? "YA (normal, short-lived)" : "belum"}`,
-    `Profile ARN: ${j.profileArn || "-"}`,
+    `Profile ARN: ${token.profileArn || "-"}`,
     "",
     "=== REFRESH TOKEN (untuk Import Token di 9router) ===",
-    j.refreshToken,
+    token.refreshToken,
     "",
     "=== ACCESS TOKEN (info saja) ===",
-    j.accessToken || "-",
+    token.accessToken || "-",
     "",
     "Cara pakai: 9router dashboard → Kiro → Import Token → paste refresh token di atas.",
     "Jangan share file ini — refresh token = kunci penuh ke akun Kiro kamu.",
@@ -75,8 +137,9 @@ function main() {
   ].join("\r\n");
 
   fs.writeFileSync(outPath, out);
+  console.log(`Sumber: Kiro ${token.source.toUpperCase()}`);
   console.log("Token tersimpan: " + outPath);
-  console.log("Refresh token (" + j.refreshToken.length + " chars) siap dipakai untuk Import Token.");
+  console.log("Refresh token (" + token.refreshToken.length + " chars) siap dipakai untuk Import Token.");
 }
 
 main();
