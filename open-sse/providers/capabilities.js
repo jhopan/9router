@@ -131,6 +131,9 @@ export const MODEL_CAPABILITIES = {
   // via OpenAI Responses input_image; reasoning supports up to xhigh.
   "muse-spark-1.2-contributor-free": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
   "muse-spark-1.3-contributor-free": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  // FreeBuff/Codebuff free-tier catalog (provider "freebuff") — OmniRoute parity
+  "mimo-v2.5":          { vision: true, reasoning: true, thinkingFormat: null, thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
+  "glm-5.2":            { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 48000 },
 };
 
 const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
