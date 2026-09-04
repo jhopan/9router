@@ -119,10 +119,20 @@ export async function POST(request) {
           const parsed = await res.json().catch(() => null);
           const msg = parsed?.choices?.[0]?.message;
           const content = typeof msg?.content === "string" ? msg.content.trim() : "";
-          // 200 + non-error content after an image = the model accepted image input.
-          // A vision-less model typically 400s on image blocks; treat empty-but-200
-          // as weak evidence and keep heuristic (off).
-          if (content.length > 0) {
+          // Who actually answered? The Vision Adapter (combo image) may intercept
+          // a vision-less target and switch the request — the response then comes
+          // from a DIFFERENT model. That switch is itself proof the target cannot
+          // see images, so credit vision only when the TARGET answered.
+          const respondedModel = String(parsed?.model || "");
+          const targetId = model.split("/").pop() || model;
+          const switched = respondedModel !== "" && !respondedModel.includes(targetId);
+          if (switched) {
+            caps.vision = false;
+            detail.vision = `combo-switched (answered by ${respondedModel}, not the target)`;
+          } else if (content.length > 0) {
+            // 200 + non-error content after an image from the TARGET itself = it
+            // accepted image input. A vision-less model typically 400s on image
+            // blocks; empty-but-200 is weak evidence and keeps heuristic (off).
             visionOk = true;
             caps.vision = true;
             detail.vision = "probe (answered about the image)";
