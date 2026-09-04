@@ -66,9 +66,9 @@ function machineClientId() {
 }
 const CLIENT_ID = machineClientId();
 
-const sessionPool = new Map(); // token -> { instanceId, runId, agentId, createdAt }
+const sessionPool = new Map(); // `${token}::${model}` -> { instanceId, runId, agentId, createdAt }
 const tokenCooldown = new Map(); // token -> { until, reason }
-const inflight = new Map(); // token -> Promise<session> (single-flight handshake)
+const inflight = new Map(); // `${token}::${model}` -> Promise<session> (single-flight handshake)
 
 const jitter = () => new Promise((r) => setTimeout(r, randomInt(0, JITTER_MAX_MS)));
 
@@ -81,14 +81,16 @@ export class FreebuffExecutor {
     this.provider = "freebuff";
   }
 
-  // ── session pool ──────────────────────────────────────────────────────────
-  async acquireSession(token, agentId, proxyOptions) {
+  // ── session pool (per token+model — upstream binds a session to one model;
+  //    switching models on a live session returns 409 "restart to switch") ──
+  async acquireSession(token, requestedModel, agentId, proxyOptions) {
     const now = Date.now();
-    const existing = sessionPool.get(token);
+    const poolKey = `${token}::${requestedModel}`;
+    const existing = sessionPool.get(poolKey);
     if (existing && existing.runId && now < existing.expiresAt) return existing;
 
     // single-flight: concurrent requests share one handshake
-    if (inflight.has(token)) return inflight.get(token);
+    if (inflight.has(poolKey)) return inflight.get(poolKey);
 
     const p = (async () => {
       await jitter();
@@ -120,22 +122,26 @@ export class FreebuffExecutor {
         if (runRes.ok) runId = (await runRes.json().catch(() => ({}))).runId || "";
       } catch {}
 
-      const session = { instanceId, runId, agentId, createdAt: now, expiresAt: now + SESSION_TTL_MS };
-      sessionPool.set(token, session);
+      const session = { instanceId, runId, agentId, model: requestedModel, createdAt: now, expiresAt: now + SESSION_TTL_MS };
+      sessionPool.set(poolKey, session);
       return session;
     })();
 
-    inflight.set(token, p);
+    inflight.set(poolKey, p);
     try {
       return await p;
     } finally {
-      inflight.delete(token);
+      inflight.delete(poolKey);
     }
   }
 
-  invalidateSession(token, status = "completed") {
-    const s = sessionPool.get(token);
-    sessionPool.delete(token);
+  invalidateSession(token, status = "completed", requestedModel = null) {
+    // drop this token's session(s) — just the one model's unless unspecified
+    const keys = requestedModel
+      ? [`${token}::${requestedModel}`]
+      : [...sessionPool.keys()].filter((k) => k.startsWith(`${token}::`));
+    const s = sessionPool.get(keys[0]);
+    for (const k of keys) sessionPool.delete(k);
     if (s?.runId) {
       // honest FINISH — the run actually lived this long
       void proxyAwareFetch(`${UPSTREAM}/agent-runs`, {
@@ -165,17 +171,17 @@ export class FreebuffExecutor {
       typeof model === "string" ? model.replace(/^freebuff\//, "") : model || "deepseek/deepseek-v4-flash";
     const agentId = MODEL_TO_AGENT[requestedModel] || "base2-free";
 
-    // 1. session (pooled)
+    // 1. session (pooled, per token+model)
     let session;
     try {
-      session = await this.acquireSession(token, agentId, proxyOptions);
+      session = await this.acquireSession(token, requestedModel, agentId, proxyOptions);
     } catch (err) {
       if (err?.status === 429) {
         tokenCooldown.set(token, { until: Date.now() + 6 * 60 * 60 * 1000, reason: "upstream 429" });
         return jsonError(429, `FreeBuff quota: ${err.message}`, "rate_limit_error", { retryAfter: 6 * 3600 });
       }
       if (err?.status === 401 || err?.status === 403) {
-        this.invalidateSession(token, "aborted");
+        this.invalidateSession(token, "aborted", requestedModel);
         return jsonError(err.status, `FreeBuff auth rejected: ${err.message.slice(0, 240)}`, "authentication_error");
       }
       return jsonError(502, err.message || "FreeBuff upstream error");
@@ -207,27 +213,56 @@ export class FreebuffExecutor {
       },
     };
 
-    const completionHeaders = {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      "User-Agent": "ai-sdk/openai-compatible/1.0.25/codebuff",
-      Accept: stream !== false ? "text/event-stream" : "application/json, text/event-stream",
-      "x-freebuff-instance-id": session.instanceId,
-      ...(session.runId ? { "x-codebuff-run-id": session.runId } : {}),
-      "x-codebuff-agent-id": agentId,
+    // 4. chat completion — with ONE bounded retry: upstream binds a session to
+    //    one model ("session is bound to X; restart freebuff to switch models").
+    //    On 409, drop the pooled session, re-handshake (fresh instance binds to
+    //    the new model), and retry the chat exactly once.
+    const doChat = (sess) => {
+      const completionHeaders = {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "User-Agent": "ai-sdk/openai-compatible/1.0.25/codebuff",
+        Accept: stream !== false ? "text/event-stream" : "application/json, text/event-stream",
+        "x-freebuff-instance-id": sess.instanceId,
+        ...(sess.runId ? { "x-codebuff-run-id": sess.runId } : {}),
+        "x-codebuff-agent-id": agentId,
+      };
+      const upstreamBody2 = { ...upstreamBody, codebuff_metadata: { ...upstreamBody.codebuff_metadata, run_id: sess.runId, freebuff_instance_id: sess.instanceId } };
+      return proxyAwareFetch(`${UPSTREAM}/chat/completions`, {
+        method: "POST",
+        headers: completionHeaders,
+        body: JSON.stringify(upstreamBody2),
+        signal,
+      });
     };
 
-    // 4. chat completion
-    const response = await proxyAwareFetch(`${UPSTREAM}/chat/completions`, {
-      method: "POST",
-      headers: completionHeaders,
-      body: JSON.stringify(upstreamBody),
-      signal,
-    });
+    let response = await doChat(session);
+
+    if (response.status === 409) {
+      const errText = await response.text().catch(() => "");
+      response = null;
+      // stale/bound session — rotate honestly and re-handshake once
+      this.invalidateSession(token, "aborted", requestedModel);
+      try {
+        session = await this.acquireSession(token, requestedModel, agentId, proxyOptions);
+        response = await doChat(session);
+      } catch (err) {
+        if (err?.status === 429) {
+          tokenCooldown.set(token, { until: Date.now() + 6 * 60 * 60 * 1000, reason: "upstream 429" });
+          return jsonError(429, `FreeBuff quota: ${err.message}`, "rate_limit_error", { retryAfter: 6 * 3600 });
+        }
+        return jsonError(502, err.message || "FreeBuff upstream error");
+      }
+      if (response.status === 409) {
+        // second 409 — account-level lock (e.g. "another instance taken over"); surface it
+        const errText2 = await response.text().catch(() => "");
+        return jsonError(409, `FreeBuff session conflict: ${errText2.slice(0, 240)}`, "invalid_request_error");
+      }
+    }
 
     if (!response.ok && (response.status === 429 || response.status === 401 || response.status === 403)) {
       // session is burned — rotate honestly, lock on 429
-      this.invalidateSession(token, response.status === 429 ? "completed" : "aborted");
+      this.invalidateSession(token, response.status === 429 ? "completed" : "aborted", requestedModel);
       if (response.status === 429) {
         tokenCooldown.set(token, { until: Date.now() + 6 * 60 * 60 * 1000, reason: "upstream 429" });
         return jsonError(429, "FreeBuff daily quota exhausted for this token (resets Pacific midnight)", "rate_limit_error", { retryAfter: 6 * 3600 });
