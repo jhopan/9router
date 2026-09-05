@@ -387,6 +387,10 @@ Default URLs:
         <b>Vertex AI</b><br/>
         <sub>Gemini 3 Pro + GLM-5 + DeepSeek<br/>$300 credits free</sub>
       </td>
+      <td align="center" width="150">
+        <b>🔥 FreeBuff</b><br/>
+        <sub>DeepSeek V4 Flash + MiMo 2.5<br/>6 sessions/day per model</sub>
+      </td>
     </tr>
   </table>
 </div>
@@ -651,6 +655,16 @@ Use [AgentRouter](https://agentrouter.org) — an Anthropic-compatible relay tha
 - **Claude Code wire image** — full fingerprint headers baked in, passes AgentRouter's WAF
 - **Auto-translate (ID ↔ EN)** — input translated to English before forwarding (AgentRouter accepts Mandarin/English/French/German/Russian), responses translated back to Indonesian
 - **Quota tracking** — balance via New-API System Access Token + New-Api-User ID
+
+### 🆓 FreeBuff Support (Codebuff free models)
+
+Use [FreeBuff](https://codebuff.com) — Codebuff's free-tier coding models, natively wired (browser login, no proxy needed):
+
+- **Built-in `freebuff` provider** — dual auth: **browser login** (device-polling — open the login URL on ANY device, 9router catches the token automatically; no callback URL) or paste the CLI `authToken` (`~/.config/manicode/credentials.json`)
+- **`fb/<model>` prefix** — e.g. `fb/deepseek/deepseek-v4-flash`, `fb/mimo/mimo-v2.5`, `fb/z-ai/glm-5.3-flash`
+- **Native executor** — session pooling per token+model, honest agent-run lifecycle, 429 quota-lock with automatic multi-account drain (never round-robin — farm-detection safe)
+- **Quota reality** — 6 sessions/day per model on the limited tier (each session = a 1-hour admission block; all chats inside it share the claim), resets Pacific midnight (07:00 WIB). `deepseek-v4-flash` and `mimo-v2.5` serve fine from Indonesian residential IPs; premium models (`glm-5.3-flash`, `gpt-5.6-luna`) are region-gated.
+- **Multi-account drain** — add several FreeBuff accounts; 9router drains one until its daily quota, then falls to the next automatically
 
 ### 👥 Multi-Account Support
 
