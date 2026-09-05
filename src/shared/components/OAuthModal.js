@@ -49,6 +49,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [ideStatus, setIdeStatus] = useState(null);
   const popupRef = useRef(null);
   const pollingAbortRef = useRef(false);
+  const pollingActiveRef = useRef(false); // StrictMode double-invoke guard — one live poll loop
   const openedRef = useRef(false);
   const { copied, copy } = useCopyToClipboard();
 
@@ -117,6 +118,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
   // Poll for device code token
   const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData, deadlineMs) => {
+    // React 18 StrictMode (dev) double-invokes effects → startPolling would run
+    // TWO parallel loops with the same fingerprint (double upstream polls, and
+    // both die together on deadline while the spinner keeps spinning). Guard
+    // with a module-level-ish ref lock: only one live loop at a time.
+    if (pollingAbortRef.current === false && pollingActiveRef.current) return;
+    pollingActiveRef.current = true;
     pollingAbortRef.current = false;
     setPolling(true);
     // Honor the upstream's expires_in when supplied (qoder sets 300s) so we
@@ -130,6 +137,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       if (pollingAbortRef.current) {
         console.log("[OAuthModal] Polling aborted");
         setPolling(false);
+        pollingActiveRef.current = false;
         return;
       }
 
@@ -139,6 +147,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       if (pollingAbortRef.current) {
         console.log("[OAuthModal] Polling aborted after sleep");
         setPolling(false);
+        pollingActiveRef.current = false;
         return;
       }
 
@@ -155,6 +164,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           pollingAbortRef.current = true; // Stop polling immediately
           setStep("success");
           setPolling(false);
+          pollingActiveRef.current = false;
           onSuccess?.();
           return;
         }
@@ -170,13 +180,15 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         setError(err.message);
         setStep("error");
         setPolling(false);
+        pollingActiveRef.current = false;
         return;
       }
     }
 
-    setError("Authorization timeout");
+    setError("Authorization timeout — close this dialog and try Login again to get a fresh URL");
     setStep("error");
     setPolling(false);
+    pollingActiveRef.current = false;
   }, [provider, onSuccess]);
 
   // Trae/Windsurf proxy OAuth flow: dynamic-port local callback → auto exchange.
