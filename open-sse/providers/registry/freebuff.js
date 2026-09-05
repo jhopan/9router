@@ -14,7 +14,8 @@ export default {
       apiKeyUrl: "https://codebuff.com",
     },
   },
-  category: "apikey",
+  category: "oauth",
+  authModes: ["oauth", "apikey"],
   transport: {
     baseUrl: "https://www.codebuff.com/api/v1/chat/completions",
     validateUrl: "https://www.codebuff.com/api/v1/models",
@@ -32,4 +33,15 @@ export default {
   ],
   passthroughModels: true,
   serviceKinds: ["llm"],
+  // Browser login flow (mirrors the official CLI: POST /api/auth/cli/code with a
+  // fresh fingerprintId → open loginUrl on ANY device → poll /api/auth/cli/status
+  // until user.authToken arrives). Consumed by src/lib/oauth/providers/freebuff.js.
+  oauth: {
+    baseUrl: "https://www.codebuff.com",
+    codeUrl: "https://www.codebuff.com/api/auth/cli/code",
+    statusUrl: "https://www.codebuff.com/api/auth/cli/status",
+    userAgent: "Bun/1.3.14",
+    pollInterval: 5000,
+    timeoutMs: 300000,
+  },
 };
