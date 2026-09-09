@@ -244,6 +244,27 @@ export class FreebuffExecutor extends BaseExecutor {
 
     let response = await doChat(session);
 
+    // 404 "No endpoints found" = the upstream routing node behind THIS instance
+    // is gone (handshake reuses the same instance; only a fresh one lands on a
+    // healthy node). Treat like 409: rotate honestly and re-handshake once.
+    if (response.status === 404) {
+      const errText404 = await response.text().catch(() => "");
+      if (errText404.includes("No endpoints found")) {
+        response = null;
+        this.invalidateSession(token, "aborted", requestedModel);
+        try {
+          session = await this.acquireSession(token, requestedModel, agentId, proxyOptions);
+          response = await doChat(session);
+        } catch (err) {
+          if (err?.status === 429) {
+            tokenCooldown.set(token, { until: Date.now() + 6 * 60 * 60 * 1000, reason: "upstream 429" });
+            return jsonError(429, `FreeBuff quota: ${err.message}`, "rate_limit_error", { retryAfter: 6 * 3600 });
+          }
+          return jsonError(502, err.message || "FreeBuff upstream error");
+        }
+      }
+    }
+
     if (response.status === 409) {
       const errText = await response.text().catch(() => "");
       response = null;
