@@ -76,8 +76,9 @@ function jsonError(status, message, type = "upstream_error", extra = {}) {
   return { response: new Response(JSON.stringify({ error: { message, type, ...extra } }), { status, headers: { "Content-Type": "application/json" } }) };
 }
 
-export class FreebuffExecutor {
+export class FreebuffExecutor extends BaseExecutor {
   constructor() {
+    super();
     this.provider = "freebuff";
   }
 

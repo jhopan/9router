@@ -33,6 +33,9 @@ export default {
   ],
   passthroughModels: true,
   serviceKinds: ["llm"],
+  // usage: GET /api/v1/freebuff/session probe (zero freebucks) feeds the
+  // Usage tab with freebucks balance/spent/prices/active instance.
+  features: { usage: true },
   // Browser login flow (mirrors the official CLI: POST /api/auth/cli/code with a
   // fresh fingerprintId → open loginUrl on ANY device → poll /api/auth/cli/status
   // until user.authToken arrives). Consumed by src/lib/oauth/providers/freebuff.js.
