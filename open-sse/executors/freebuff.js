@@ -2,6 +2,7 @@ import { randomInt } from "node:crypto";
 import { createHash } from "node:crypto";
 import { BaseExecutor } from "./base.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { renameRequestTools, restoreResponseToolNames, restoreStreamToolNames } from "./freebuffToolMap.js";
 
 /**
  * FreebuffExecutor — native Codebuff/FreeBuff free-tier provider.
@@ -219,6 +220,14 @@ export class FreebuffExecutor extends BaseExecutor {
       },
     };
 
+    // Tool-name tolerance (freebuff-proxy parity #140): harnesses (Hermes,
+    // Cline, ...) send their own tool names → zero signature tools → upstream
+    // foreign_toolset gate downgrades the request ("No endpoints found").
+    // Rename known names to signature equivalents on the wire; schemas stay
+    // untouched; names are restored on every response path below.
+    const { renamed: renamedTools, mapping: toolNameMapping } = renameRequestTools(upstreamBody.tools);
+    if (renamedTools) upstreamBody.tools = renamedTools;
+
     // 4. chat completion — with ONE bounded retry: upstream binds a session to
     //    one model ("session is bound to X; restart freebuff to switch models").
     //    On 409, drop the pooled session, re-handshake (fresh instance binds to
@@ -307,6 +316,48 @@ export class FreebuffExecutor extends BaseExecutor {
       }
       const errText = await response.text().catch(() => "");
       return jsonError(response.status, `FreeBuff rejected (${response.status}): ${errText.slice(0, 240)}`, "authentication_error");
+    }
+
+    // Restore client tool names on the response path (freebuff-proxy parity):
+    //  - non-stream: parse+patch JSON tool_calls names
+    //  - stream: rewrite SSE lines so delta.tool_calls names match the client's
+    if (Object.keys(toolNameMapping).length > 0) {
+      if (stream === false) {
+        const text = await response.text().catch(() => "");
+        try {
+          const data = JSON.parse(text);
+          restoreResponseToolNames(data, toolNameMapping);
+          response = new Response(JSON.stringify(data), { status: response.status, headers: response.headers });
+        } catch { /* non-JSON body — pass through */ }
+      } else {
+        const origBody = response.body;
+        const decoder = new TextDecoder();
+        const encoder = new TextEncoder();
+        const stream_ = new ReadableStream({
+          async start(controller) {
+            const reader = origBody.getReader();
+            let buf = "";
+            try {
+              for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buf += decoder.decode(value, { stream: true });
+                const lines = buf.split("\n");
+                buf = lines.pop() || "";
+                for (const line of lines) {
+                  controller.enqueue(encoder.encode(restoreStreamToolNames(line + "\n", toolNameMapping)));
+                }
+              }
+              if (buf) controller.enqueue(encoder.encode(restoreStreamToolNames(buf, toolNameMapping)));
+            } catch (e) {
+              try { controller.error(e); } catch { /* client gone */ }
+              return;
+            }
+            controller.close();
+          },
+        });
+        response = new Response(stream_, { status: response.status, headers: response.headers });
+      }
     }
 
     return { response };
