@@ -1,4 +1,4 @@
-import { randomInt } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
 import { BaseExecutor } from "./base.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
@@ -70,6 +70,30 @@ const CLIENT_ID = machineClientId();
 const sessionPool = new Map(); // `${token}::${model}` -> { instanceId, runId, agentId, createdAt }
 const tokenCooldown = new Map(); // token -> { until, reason }
 const inflight = new Map(); // `${token}::${model}` -> Promise<session> (single-flight handshake)
+const actingUserIds = new Map(); // token -> user id (x-freebuff-acting-user-id; CLI: GET /api/v1/me once)
+
+// The official CLI sends x-freebuff-acting-user-id (the account's OWN id from
+// GET /api/v1/me) on every chat and agent-runs call. Fetch once per token,
+// cache forever — the id never changes for a token.
+async function getActingUserId(token, signal) {
+  if (actingUserIds.has(token)) return actingUserIds.get(token);
+  try {
+    const r = await proxyAwareFetch(`${UPSTREAM}/me`, {
+      headers: { Authorization: `Bearer ${token}`, "User-Agent": "Bun/1.3.14", Accept: "application/json" },
+      signal,
+    });
+    if (r.ok) {
+      const j = await r.json().catch(() => ({}));
+      const id = j?.user?.id || j?.id || "";
+      if (id) {
+        actingUserIds.set(token, id);
+        return id;
+      }
+    }
+  } catch { /* best-effort — absent header is the CLI's own fallback */ }
+  actingUserIds.set(token, "");
+  return "";
+}
 
 const jitter = () => new Promise((r) => setTimeout(r, randomInt(0, JITTER_MAX_MS)));
 
@@ -121,15 +145,24 @@ export class FreebuffExecutor extends BaseExecutor {
       // one agent-run per session (START) — honest lifecycle
       let runId = "";
       try {
+        const actingUserStart = await getActingUserId(token, null);
         const runRes = await proxyAwareFetch(`${UPSTREAM}/agent-runs`, {
           method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "User-Agent": "Bun/1.3.14" },
-          body: JSON.stringify({ action: "START", agentId }),
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            "User-Agent": "Bun/1.3.14",
+            ...(actingUserStart ? { "x-freebuff-acting-user-id": actingUserStart } : {}),
+          },
+          body: JSON.stringify({ action: "START", agentId, ancestorRunIds: [] }),
         });
         if (runRes.ok) runId = (await runRes.json().catch(() => ({}))).runId || "";
       } catch {}
 
-      const session = { instanceId, runId, agentId, model: requestedModel, createdAt: now, expiresAt: now + SESSION_TTL_MS };
+      // trace_session_id mirrors the CLI: one random UUID per run, repeated
+      // on every chat call of that run (freebuff-proxy ChatOptions.TraceSessionID).
+      const traceSessionId = randomUUID();
+      const session = { instanceId, runId, agentId, model: requestedModel, traceSessionId, createdAt: now, expiresAt: now + SESSION_TTL_MS };
       sessionPool.set(poolKey, session);
       return session;
     })();
@@ -151,11 +184,19 @@ export class FreebuffExecutor extends BaseExecutor {
     for (const k of keys) sessionPool.delete(k);
     if (s?.runId) {
       // honest FINISH — the run actually lived this long
-      void proxyAwareFetch(`${UPSTREAM}/agent-runs`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "User-Agent": "Bun/1.3.14" },
-        body: JSON.stringify({ action: "FINISH", runId: s.runId, status, totalSteps: 1, directCredits: 0, totalCredits: 0 }),
-      }).catch(() => {});
+      void (async () => {
+        const actingUserEnd = actingUserIds.get(token) || "";
+        await proxyAwareFetch(`${UPSTREAM}/agent-runs`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            "User-Agent": "Bun/1.3.14",
+            ...(actingUserEnd ? { "x-freebuff-acting-user-id": actingUserEnd } : {}),
+          },
+          body: JSON.stringify({ action: "FINISH", runId: s.runId, status, totalSteps: 1, directCredits: 0, totalCredits: 0 }),
+        }).catch(() => {});
+      })();
     }
   }
 
@@ -206,19 +247,32 @@ export class FreebuffExecutor extends BaseExecutor {
 
     // 3. upstream body — OpenAI shape + codebuff_metadata
     const existingMetadata = payload.codebuff_metadata && typeof payload.codebuff_metadata === "object" ? payload.codebuff_metadata : {};
-    const upstreamBody = {
+    // CLI envelope parity (freebuff-proxy injectEnvelope):
+    //  - codebuff_metadata: run_id/client_id/instance per session; reserved keys win
+    //  - provider.data_collection = "deny" (the CLI always denies data collection)
+    //  - stream forced true in the BODY (client-side stream choice handled by 9router)
+    //  - stop sentinel: JSON-QUOTED "cb_easp" when the request has no stop of its own
+    let upstreamBody = {
       ...payload,
       model: requestedModel,
       messages: incomingMessages,
-      stream: stream !== false,
       codebuff_metadata: {
+        ...existingMetadata,
         run_id: session.runId,
         cost_mode: "free",
         client_id: CLIENT_ID,
         freebuff_instance_id: session.instanceId,
-        ...existingMetadata,
+        ...(session.traceSessionId ? { trace_session_id: session.traceSessionId } : {}),
       },
+      provider: { data_collection: "deny" },
+      stream: true,
     };
+    if (!Array.isArray(upstreamBody.stop) || upstreamBody.stop.length === 0) {
+      upstreamBody.stop = ['"cb_easp"'];
+    }
+    if (typeof payload.reasoning_effort === "string" && payload.reasoning_effort) {
+      upstreamBody.codebuff_metadata.freebuff_reasoning_effort = payload.reasoning_effort;
+    }
 
     // Tool-name tolerance (freebuff-proxy parity #140): harnesses (Hermes,
     // Cline, ...) send their own tool names → zero signature tools → upstream
@@ -232,21 +286,23 @@ export class FreebuffExecutor extends BaseExecutor {
     //    one model ("session is bound to X; restart freebuff to switch models").
     //    On 409, drop the pooled session, re-handshake (fresh instance binds to
     //    the new model), and retry the chat exactly once.
-    const doChat = (sess) => {
+    const doChat = async (sess) => {
+      // CLI parity (freebuff-proxy chat.go): the official CLI sends exactly
+      // Authorization + the ai-sdk UA (+ x-freebuff-acting-user-id) on chat —
+      // model and instance id ride ONLY in body codebuff_metadata. Other
+      // x-freebuff-*/x-codebuff-* headers on chat are a third-party signal.
+      const actingUser = await getActingUserId(token, signal);
       const completionHeaders = {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
         "User-Agent": "ai-sdk/openai-compatible/1.0.25/codebuff",
-        Accept: stream !== false ? "text/event-stream" : "application/json, text/event-stream",
-        "x-freebuff-instance-id": sess.instanceId,
-        ...(sess.runId ? { "x-codebuff-run-id": sess.runId } : {}),
-        "x-codebuff-agent-id": agentId,
+        Accept: "application/json, text/event-stream",
+        ...(actingUser ? { "x-freebuff-acting-user-id": actingUser } : {}),
       };
-      const upstreamBody2 = { ...upstreamBody, codebuff_metadata: { ...upstreamBody.codebuff_metadata, run_id: sess.runId, freebuff_instance_id: sess.instanceId } };
       return proxyAwareFetch(`${UPSTREAM}/chat/completions`, {
         method: "POST",
         headers: completionHeaders,
-        body: JSON.stringify(upstreamBody2),
+        body: JSON.stringify(upstreamBody),
         signal,
       });
     };
