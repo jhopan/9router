@@ -100,6 +100,11 @@ export class FreebuffExecutor {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
           "User-Agent": "Bun/1.3.14",
+          // Upstream selects the model via this header (CLI parity: the
+          // session POST is a bare fetch with Authorization + optional
+          // x-freebuff-model). Without it upstream defaults to
+          // deepseek-v4-flash (30 freebucks) → 429 even for cheaper models.
+          "x-freebuff-model": requestedModel,
         },
         body: JSON.stringify({}),
       }).catch((e) => { throw new Error(`FreeBuff session network error: ${e.message}`); });
