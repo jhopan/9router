@@ -251,6 +251,17 @@ export class FreebuffExecutor extends BaseExecutor {
       const errText404 = await response.text().catch(() => "");
       if (errText404.includes("No endpoints found")) {
         response = null;
+        // Release the poisoned slot FIRST (CLI parity: DELETE keyed on the
+        // instance header). Upstream ends it with freebucksRefundPending:true,
+        // so the next handshake lands on a FRESH instance/node instead of
+        // returning the same dead one for the rest of its 1h lifetime.
+        try {
+          await proxyAwareFetch(`${UPSTREAM}/freebuff/session`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}`, "User-Agent": "Bun/1.3.14", "x-freebuff-instance-id": session.instanceId },
+            signal,
+          });
+        } catch { /* best-effort — handshake still proceeds */ }
         this.invalidateSession(token, "aborted", requestedModel);
         try {
           session = await this.acquireSession(token, requestedModel, agentId, proxyOptions);
