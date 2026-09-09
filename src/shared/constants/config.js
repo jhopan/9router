@@ -92,6 +92,18 @@ export const QUOTA_AUTOPING_CONFIG = {
   },
 };
 
+// FreeBuff daily-streak keeper: one tiny chat per connection per Pacific day
+// (when the account wasn't used naturally) so upstream streak/entitlement grows.
+export const FREEBUFF_AUTOSTREAK_CONFIG = {
+  tickIntervalMs: 300000,        // check every 5 minutes
+  windowStartHour: 7,            // WIB window start (default 07:00)
+  windowEndHour: 10,             // WIB window end   (default 10:00)
+  windowMinutes: 180,            // spread slots across the window (per-connection offset)
+  pingMaxTokens: 1,
+  pingText: "hi",
+  failureCooldownMs: 3600000,    // 1h cooldown after a failure — never hammer
+};
+
 // Re-export from providers.js for backward compatibility
 export {
   FREE_PROVIDERS,

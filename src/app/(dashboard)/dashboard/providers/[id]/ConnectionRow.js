@@ -33,7 +33,9 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         : "";
   const autoPingTooltip = autoPing?.provider === "codex"
     ? "Auto-starts the next 5h Codex window after reset by sending a tiny gpt-5.5 request. Consumes a small amount of quota."
-    : "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.";
+    : autoPing?.provider === "freebuff"
+      ? "Daily streak: once a day (07:00-10:00, slot staggered per account) sends one tiny chat on the cheapest model — only if the account had no usage that day. Turn OFF on days you'll use the account yourself."
+      : "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.";
 
   let maskedProxyUrl = "";
   if (boundProxyPool?.proxyUrl || connection.providerSpecificData?.connectionProxyUrl) {
@@ -298,8 +300,8 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 onClick={() => autoPing.onToggle(!autoPing.on)}
                 className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${autoPing.on ? "text-primary" : "text-text-muted hover:text-primary"}`}
               >
-                <span className="material-symbols-outlined text-[18px]">bolt</span>
-                <span className="text-[10px] leading-tight">Auto-ping</span>
+                <span className="material-symbols-outlined text-[18px]">{autoPing?.provider === "freebuff" ? "local_fire_department" : "bolt"}</span>
+                <span className="text-[10px] leading-tight">{autoPing?.provider === "freebuff" ? "Streak" : "Auto-ping"}</span>
               </button>
             </Tooltip>
           )}

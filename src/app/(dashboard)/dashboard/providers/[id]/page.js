@@ -29,6 +29,7 @@ const ONE_BY_ONE_DELAY_MS = 1000;
 const AUTO_PING_SETTINGS_KEYS = {
   claude: "claudeAutoPing",
   codex: "codexAutoPing",
+  freebuff: "freebuffAutoStreak",
 };
 
 function sleep(ms) {
