@@ -662,9 +662,11 @@ Use [FreeBuff](https://codebuff.com) — Codebuff's free-tier coding models, nat
 
 - **Built-in `freebuff` provider** — dual auth: **browser login** (device-polling — open the login URL on ANY device, 9router catches the token automatically; no callback URL) or paste the CLI `authToken` (`~/.config/manicode/credentials.json`)
 - **`fb/<model>` prefix** — e.g. `fb/deepseek/deepseek-v4-flash`, `fb/mimo/mimo-v2.5`, `fb/z-ai/glm-5.3-flash`
-- **Native executor** — session pooling per token+model, honest agent-run lifecycle, 429 quota-lock with automatic multi-account drain (never round-robin — farm-detection safe)
-- **Quota reality** — 6 sessions/day per model on the limited tier (each session = a 1-hour admission block; all chats inside it share the claim), resets Pacific midnight (07:00 WIB). `deepseek-v4-flash` and `mimo-v2.5` serve fine from Indonesian residential IPs; premium models (`glm-5.3-flash`, `gpt-5.6-luna`) are region-gated.
-- **Multi-account drain** — add several FreeBuff accounts; 9router drains one until its daily quota, then falls to the next automatically
+- **Native executor with full CLI wire parity** — session pooling per token+model, honest agent-run lifecycle, CLI envelope (Buffy system marker, `provider.data_collection=deny`, `"cb_easp"` stop, `trace_session_id`, `x-freebuff-acting-user-id`), and **tool-name tolerance mapping**: agentic harnesses (Hermes, Cline, Codex...) send their own tool names; 9router renames them to Codebuff's signature tools on the wire (schemas untouched, names restored on responses) so upstream's `foreign_toolset` gate never downgrades your chat to the free junk model
+- **Freebucks pricing** — sessions cost Freebucks (daily allowance per account, resets Pacific midnight ≈ 14:00 WIB); prices vary per model and change over time (the Usage tab shows live prices per model); a slot released early via DELETE is refunded (`freebucksRefundPending`)
+- **Auto-Streak keeper (opt-in per connection)** — once per Pacific day, if an account had no usage, sends one tiny chat on the cheapest live-priced model so the upstream streak keeps growing; skips automatically when upstream reports activity (`todayUsed`); staggered per-account slots inside 07:00–10:00 WIB — never simultaneous
+- **Quota Tracker** — freebucks balance/spent/remaining, live per-model prices, active instance (which model it is bound to), and streak progress per account
+- **Multi-account drain** — add several FreeBuff accounts; 9router drains one until its daily allowance, then falls to the next automatically (never round-robin — farm-detection safe); 404 "No endpoints found" auto-releases the poisoned slot (with refund) and re-handshakes onto a fresh instance
 
 ### 👥 Multi-Account Support
 
