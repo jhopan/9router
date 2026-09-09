@@ -92,8 +92,13 @@ async function runStreakForConnection(connection, proxyOptions) {
     return { skipped: true, reason: "already active today" };
   }
 
-  // 1) zero-cost probe: balance + prices + active instance
+  // 1) zero-cost probe: balance + prices + active instance + STREAK
   const usage = await getFreebuffUsage(connection.accessToken, proxyOptions);
+  // Upstream truth beats inference: todayUsed=true means activity is already
+  // recorded today — skip without spending anything.
+  if (usage?.streak?.todayUsed === true) {
+    return { skipped: true, reason: "upstream says active today (streak)" };
+  }
   const remaining = Number(usage?.freebucks?.daily?.remaining);
   const prices = usage?.freebucks?.prices || {};
   if (!Number.isFinite(remaining) || remaining <= 0) {

@@ -7,6 +7,7 @@
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 
 const FREEBUFF_SESSION_URL = "https://www.codebuff.com/api/v1/freebuff/session";
+const FREEBUFF_STREAK_URL = "https://www.codebuff.com/api/v1/freebuff/streak";
 
 /**
  * @param {string} accessToken - FreeBuff oauth token (UUID)
@@ -53,15 +54,38 @@ export async function getFreebuffUsage(accessToken, proxyOptions = null) {
       };
     }
 
+    // Streak (separate zero-cost endpoint): progress toward the next perk.
+    let streak = null;
+    try {
+      const sr = await proxyAwareFetch(
+        FREEBUFF_STREAK_URL,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "User-Agent": "Bun/1.3.14",
+            Accept: "application/json",
+          },
+        },
+        proxyOptions,
+      );
+      if (sr.ok) streak = await sr.json().catch(() => null);
+    } catch { /* streak is best-effort */ }
+
+    const instanceLine = data.instanceId
+      ? `Instance active — bound to ${data.model || "unknown model"}`
+      : "No active FreeBuff instance.";
+    const streakLine = streak
+      ? ` Streak ${streak.streak}${streak.todayUsed ? " (active today)" : " (needs activity today)"}.`
+      : "";
+
     return {
       quotas,
       freebucks: fb,
+      streak,
       activeInstance: data.instanceId
         ? { instanceId: data.instanceId, model: data.model, status: data.status, accessTier: data.accessTier }
         : null,
-      message: data.instanceId
-        ? `Instance active — bound to ${data.model || "unknown model"}`
-        : "No active FreeBuff instance.",
+      message: instanceLine + streakLine,
     };
   } catch (e) {
     return { message: `FreeBuff usage probe error: ${e.message}` };
