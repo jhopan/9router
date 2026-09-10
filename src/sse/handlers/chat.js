@@ -233,8 +233,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
 
-    // All accounts unavailable
-    if (!credentials || credentials.allRateLimited) {
+    // All accounts unavailable (or auth returned a structured pin error)
+    if (!credentials || credentials.allRateLimited || credentials.__authError) {
+      if (credentials?.__authError) {
+        log.warn("CHAT", `[${provider}/${model}] ${credentials.__authError}`);
+        return errorResponse(HTTP_STATUS.NOT_FOUND, credentials.__authError);
+      }
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = HTTP_STATUS.SERVICE_UNAVAILABLE;
@@ -242,8 +246,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
       if (excludeConnectionIds.size === 0) {
-        log.warn("AUTH", `No active credentials for provider: ${provider}`);
-        return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
+        if (credentials?.error) {
+          log.warn("CHAT", `[${provider}/${model}] ${credentials.error}`);
+          return errorResponse(credentials.status || HTTP_STATUS.NOT_FOUND, credentials.error);
+        }
+        const hint = provider === "freebuff" && model
+          ? ` (check the model pin 🔒 on your freebuff connections — accounts pinned to other models never serve ${model})`
+          : "";
+        log.warn("CHAT", `No active credentials for provider: ${provider}`);
+        return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}${hint}`);
       }
       log.warn("CHAT", "No more accounts available", { provider });
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
