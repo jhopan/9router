@@ -996,7 +996,7 @@ export default function ProviderDetailPage() {
                       console.log("Error updating pin:", error);
                     }
                   },
-                  tooltip: "Pin this account to one model: requests for other models will never use it, so the upstream session never has to switch models (no 409 churn). Leave unpinned to let fallback flow freely.",
+                  tooltip: "Pin to one model — other models never use this account (no 409 churn).",
                 } : null}
                 onUpdateProxy={async (proxyPoolId) => {
                   try {

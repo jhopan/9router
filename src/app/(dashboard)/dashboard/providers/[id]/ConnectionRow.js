@@ -34,7 +34,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   const autoPingTooltip = autoPing?.provider === "codex"
     ? "Auto-starts the next 5h Codex window after reset by sending a tiny gpt-5.5 request. Consumes a small amount of quota."
     : autoPing?.provider === "freebuff"
-      ? "Daily streak: once a day (07:00-10:00, slot staggered per account) sends one tiny chat on the cheapest model — only if the account had no usage that day. Turn OFF on days you'll use the account yourself."
+      ? "Daily streak: one tiny chat per day on the cheapest model (only if unused today). Turn OFF when using the account yourself."
       : "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.";
 
   let maskedProxyUrl = "";
@@ -295,7 +295,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             </div>
           )}
           {autoPing && (
-            <Tooltip text={autoPingTooltip}>
+            <Tooltip text={autoPingTooltip} position="bottom">
               <button
                 onClick={() => autoPing.onToggle(!autoPing.on)}
                 className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${autoPing.on ? "text-primary" : "text-text-muted hover:text-primary"}`}
@@ -307,7 +307,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
           )}
           {modelPin && (
             <div className="relative">
-              <Tooltip text={modelPin.tooltip}>
+              <Tooltip text={modelPin.tooltip} position="bottom">
                 <button
                   onClick={modelPin.onToggleMenu}
                   className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${modelPin.pinnedModel ? "text-primary" : "text-text-muted hover:text-primary"}`}
