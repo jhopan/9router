@@ -113,7 +113,9 @@ async function fireWaitingRoomChain(token, signal) {
     "User-Agent": "Freebuff-CLI/1.0.0",
     "Content-Type": "application/json",
   };
-  for (const provider of ["gravity", "zeroclick"]) {
+  // gravity only — upstream rejected "zeroclick" with 400 invalid option
+  // (verified live 2026-09-11); the reference list predates that change.
+  for (const provider of ["gravity"]) {
     try {
       await proxyAwareFetch(`${UPSTREAM}/ads`, {
         method: "POST",
