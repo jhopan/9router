@@ -162,7 +162,22 @@ async function runStreakForConnection(connection, proxyOptions) {
     return { skipped: true, reason: "no balance data or empty balance" };
   }
 
-  const [model, price] = pickCheapestModel(prices, remaining);
+  // Pinned model wins over cheapest (consistency with the account's single
+  // model identity — never force a model switch on this account).
+  let model = null;
+  let price = 0;
+  const pinned = connection.providerSpecificData?.pinnedModel;
+  if (pinned && prices[pinned] !== undefined) {
+    const p = Number(prices[pinned]);
+    if (Number.isFinite(p) && p <= remaining) {
+      model = pinned;
+      price = p;
+    } else {
+      return { skipped: true, reason: `pinned model ${pinned} costs more than remaining balance` };
+    }
+  } else {
+    [model, price] = pickCheapestModel(prices, remaining);
+  }
   if (!model) {
     return { skipped: true, reason: "no affordable model in price map" };
   }

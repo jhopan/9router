@@ -7,7 +7,7 @@ import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null, modelPin = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null); // button wrapper
@@ -304,6 +304,39 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 <span className="text-[10px] leading-tight">{autoPing?.provider === "freebuff" ? "Streak" : "Auto-ping"}</span>
               </button>
             </Tooltip>
+          )}
+          {modelPin && (
+            <div className="relative">
+              <Tooltip text={modelPin.tooltip}>
+                <button
+                  onClick={modelPin.onToggleMenu}
+                  className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${modelPin.pinnedModel ? "text-primary" : "text-text-muted hover:text-primary"}`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">push_pin</span>
+                  <span className="max-w-[52px] truncate text-[10px] leading-tight">{modelPin.pinnedModel ? modelPin.pinnedModel.split("/").pop() : "Pin"}</span>
+                </button>
+              </Tooltip>
+              {modelPin.open && typeof document !== "undefined" && createPortal(
+                <div style={{ position: "fixed", right: 8, top: modelPin.menuTop ?? 200 }} className="z-[9999] max-h-[288px] max-w-[78vw] overflow-y-auto overscroll-contain rounded-lg border border-border bg-bg py-1 shadow-lg">
+                  <button
+                    onClick={() => modelPin.onSelect("")}
+                    className={`block w-full whitespace-nowrap px-3 py-1.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!modelPin.pinnedModel ? "text-primary font-medium" : "text-text-main"}`}
+                  >
+                    None (unpinned)
+                  </button>
+                  {(modelPin.models || []).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => modelPin.onSelect(m)}
+                      className={`block w-full whitespace-nowrap px-3 py-1.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5 ${modelPin.pinnedModel === m ? "text-primary font-medium" : "text-text-main"}`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>,
+                document.body
+              )}
+            </div>
           )}
           <button onClick={onEdit} className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5">
             <span className="material-symbols-outlined text-[18px]">edit</span>

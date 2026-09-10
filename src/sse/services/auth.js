@@ -85,6 +85,17 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      // FreeBuff pinned model (MODEL_LOCKS parity): a connection pinned to a
+      // specific model only serves that model. Prevents cross-model fallback
+      // from ever forcing a model switch on a live upstream instance (409
+      // model-bound churn = the farm-pattern that got two accounts swept).
+      if (providerId === "freebuff" && model) {
+        const pinned = c.providerSpecificData?.pinnedModel;
+        if (pinned && model !== pinned) {
+          log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | pinned to ${pinned}, skip (requested ${model})`);
+          return false;
+        }
+      }
       // Antigravity: skip if live quota exhausted for this model
       if (isAntigravity && model && antigravityQuotaCache) {
         const quota = antigravityQuotaCache.get(c.id)?.[model];

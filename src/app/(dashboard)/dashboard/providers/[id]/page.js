@@ -69,6 +69,7 @@ export default function ProviderDetailPage() {
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
+  const [pinMenuConnId, setPinMenuConnId] = useState(null);
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [liveModels, setLiveModels] = useState([]);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
@@ -970,6 +971,32 @@ export default function ProviderDetailPage() {
                   on: autoPing.connections[conn.id] === true,
                   onToggle: (on) => handleAutoPingConnection(conn.id, on),
                   provider: providerId,
+                } : null}
+                modelPin={providerId === "freebuff" ? {
+                  pinnedModel: conn.providerSpecificData?.pinnedModel || "",
+                  models: models.map((m) => m.id || m).filter(Boolean),
+                  open: pinMenuConnId === conn.id,
+                  onToggleMenu: () => setPinMenuConnId((prev) => (prev === conn.id ? null : conn.id)),
+                  onSelect: async (modelId) => {
+                    setPinMenuConnId(null);
+                    try {
+                      const res = await fetch(`/api/providers/${conn.id}`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ pinnedModel: modelId || null }),
+                      });
+                      if (res.ok) {
+                        setConnections(prev => prev.map(c =>
+                          c.id === conn.id
+                            ? { ...c, providerSpecificData: { ...c.providerSpecificData, pinnedModel: modelId || null } }
+                            : c
+                        ));
+                      }
+                    } catch (error) {
+                      console.log("Error updating pin:", error);
+                    }
+                  },
+                  tooltip: "Pin this account to one model: requests for other models will never use it, so the upstream session never has to switch models (no 409 churn). Leave unpinned to let fallback flow freely.",
                 } : null}
                 onUpdateProxy={async (proxyPoolId) => {
                   try {
