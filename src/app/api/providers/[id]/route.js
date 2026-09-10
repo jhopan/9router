@@ -119,17 +119,6 @@ export async function PUT(request, { params }) {
     const updateData = {};
     if (name !== undefined) updateData.name = name;
     // FreeBuff model pin (MODEL_LOCKS parity): null/"" clears the pin.
-    if (body.pinnedModel !== undefined) {
-      updateData.providerSpecificData = {
-        ...(existing.providerSpecificData || {}),
-        ...(updateData.providerSpecificData || {}),
-      };
-      if (body.pinnedModel === null || body.pinnedModel === "") {
-        delete updateData.providerSpecificData.pinnedModel;
-      } else {
-        updateData.providerSpecificData.pinnedModel = String(body.pinnedModel).trim();
-      }
-    }
     if (priority !== undefined) updateData.priority = priority;
     if (globalPriority !== undefined) updateData.globalPriority = globalPriority;
     if (defaultModel !== undefined) updateData.defaultModel = defaultModel;
@@ -164,6 +153,20 @@ export async function PUT(request, { params }) {
         } else {
           updateData.providerSpecificData.proxyPoolId = proxyPoolResult.proxyPoolId;
         }
+      }
+    }
+
+    // FreeBuff model pin (MODEL_LOCKS parity) — applied AFTER the merge so it
+    // can't be clobbered by an empty providerSpecificData body. null/"" clears.
+    if (body.pinnedModel !== undefined) {
+      updateData.providerSpecificData = {
+        ...(existing.providerSpecificData || {}),
+        ...(updateData.providerSpecificData || {}),
+      };
+      if (body.pinnedModel === null || body.pinnedModel === "") {
+        delete updateData.providerSpecificData.pinnedModel;
+      } else {
+        updateData.providerSpecificData.pinnedModel = String(body.pinnedModel).trim();
       }
     }
 
