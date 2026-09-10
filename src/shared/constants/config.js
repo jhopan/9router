@@ -98,10 +98,12 @@ export const FREEBUFF_AUTOSTREAK_CONFIG = {
   tickIntervalMs: 300000,        // check every 5 minutes
   windowStartHour: 7,            // WIB window start (default 07:00)
   windowEndHour: 10,             // WIB window end   (default 10:00)
-  windowMinutes: 180,            // spread slots across the window (per-connection offset)
   pingMaxTokens: 1,
   pingText: "hi",
   failureCooldownMs: 3600000,    // 1h cooldown after a failure — never hammer
+  touchThrottleMs: 6 * 3600000,  // restart-safe min gap between touches (maturityThrottle parity)
+  targetDays: 7,                 // streak target — reached → auto-release (maturityDefaultTarget parity)
+  noAdvanceLimit: 3,             // 3 touch-days without streak advance → pause + warn (anti-blind loop)
 };
 
 // Re-export from providers.js for backward compatibility

@@ -4,7 +4,7 @@ import { describe, it, expect } from "vitest";
 // (network/DB paths are exercised live; here we pin the deterministic logic)
 
 const mod = await import("../../src/shared/services/freebuffAutoStreak.js");
-const { pacificDayKey, slotOffsetMinutes, pickCheapestModel } = mod;
+const { pacificDayKey, slotMinuteOfDay, pickCheapestModel } = mod;
 
 describe("pacificDayKey", () => {
   it("formats a timestamp as en-CA date in America/Los_Angeles", () => {
@@ -17,20 +17,18 @@ describe("pacificDayKey", () => {
   });
 });
 
-describe("slotOffsetMinutes", () => {
-  it("returns stable offsets within [0, windowMinutes)", () => {
-    const a = slotOffsetMinutes("conn-a", 180);
-    const b = slotOffsetMinutes("conn-b", 180);
-    expect(a).toBe(slotOffsetMinutes("conn-a", 180)); // deterministic
-    expect(b).toBe(slotOffsetMinutes("conn-b", 180));
-    expect(a).toBeGreaterThanOrEqual(0);
-    expect(a).toBeLessThan(180);
-    expect(b).toBeGreaterThanOrEqual(0);
-    expect(b).toBeLessThan(180);
+describe("slotMinuteOfDay (daily re-roll)", () => {
+  it("stable within one pacific day, different across days", () => {
+    const d1 = "2026-09-09", d2 = "2026-09-10";
+    const a1 = slotMinuteOfDay("conn-a", d1, 7, 10);
+    expect(a1).toBe(slotMinuteOfDay("conn-a", d1, 7, 10)); // same day = same slot
+    const a2 = slotMinuteOfDay("conn-a", d2, 7, 10);
+    expect(a2).not.toBe(a1); // new day = re-rolled (no fixed-hour pattern)
+    expect(a1).toBeGreaterThanOrEqual(7 * 60);
+    expect(a1).toBeLessThan(10 * 60);
   });
-  it("gives different connections different slots (stagger, not simultaneous)", () => {
-    const slots = new Set(Array.from({ length: 12 }, (_, i) => slotOffsetMinutes(`freebuff-conn-${i}`, 180)));
-    // 12 connections must land on >= 6 distinct minutes — spread, not bunched
+  it("gives different connections different slots on the same day (stagger)", () => {
+    const slots = new Set(Array.from({ length: 12 }, (_, i) => slotMinuteOfDay(`freebuff-conn-${i}`, "2026-09-09", 7, 10)));
     expect(slots.size).toBeGreaterThanOrEqual(6);
   });
 });

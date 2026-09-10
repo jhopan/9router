@@ -1,23 +1,30 @@
-// FreeBuff Auto-Streak: keeps each account's daily activity alive so the
-// upstream streak/entitlement keeps growing. Once per Pacific day per
-// connection, if the account hasn't been used naturally, claim a session on
-// the CHEAPEST model (from live prices) and send one tiny chat.
+// FreeBuff Auto-Streak (maturity-style, freebuff-proxy maturity.go parity):
+// keeps each account's daily activity alive so the upstream streak/entitlement
+// keeps growing. Once per Pacific day per connection, if the account hasn't
+// been used naturally, claim a session on the CHEAPEST model (from live
+// prices) and send one tiny chat.
 //
-// Safety posture (farm-pattern avoidance):
+// Safety posture (mirrors freebuff-proxy maturity.go §4):
 // - one tiny request per connection per day, never more
-// - per-connection jittered slot inside a user-configured window (07:00-10:00
-//   WIB default) — accounts never fire simultaneously
-// - skip when the account already has usage today (user used it naturally)
-// - skip (never retry-storm) on 409 model_locked — the account's live session
-//   belongs to another model, which already proves activity today
+// - DAILY RE-ROLLED SLOT in the account's own timezone (Pacific, where the
+//   upstream rolls its windows) — the firing time changes every day and on
+//   every restart, so no fixed-hour pattern exists to detect
+// - restart-safe 6h throttle bounds the worst case to one extra cheap touch
+// - skip when upstream reports activity today (todayUsed) or when the account
+//   was used naturally — real usage makes the day indistinguishable
+// - TARGET + auto-release: when the streak reaches the target (default 7),
+//   automation disables itself for that connection until the streak lapses
+// - ANTI-BLIND loop: 3 consecutive days where a touch didn't advance the
+//   streak stops the automation with a warning flag
+// - health gates: never touch an account upstream already flagged (banned,
+//   country-blocked) or cooling down from a recent failure
 // - model chosen from upstream's live `prices` map against current remaining
-//   balance — nothing hardcoded; upstream repricing is picked up automatically
+//   balance — never fires when no affordable model exists
 
 import { getProviderConnections, updateProviderConnection, getSettings } from "@/lib/localDb";
 import { getFreebuffUsage } from "open-sse/services/usage/freebuff.js";
 import { FREEBUFF_AUTOSTREAK_CONFIG as C } from "@/shared/constants/config";
 import { getExecutor } from "open-sse/executors/index.js";
-import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 
 // Survive Next.js hot reload; one scheduler per server process.
@@ -25,6 +32,9 @@ const g = (global.__freebuffAutoStreak ??= {
   interval: null,
   running: false,
   failureCache: {},
+  // per-connection in-memory state (restart-safe values live on the connection row)
+  slots: {},        // connId -> { day, slotMs }   — re-rolled daily
+  lastTouch: {},    // connId -> ms
 });
 
 /** Pacific-day key (the upstream quota day) for a timestamp. */
@@ -37,12 +47,20 @@ export function pacificDayKey(nowMs = Date.now()) {
   }).format(new Date(nowMs));
 }
 
-/** Deterministic per-connection minute offset inside the window (stable across restarts). */
-export function slotOffsetMinutes(connectionId, windowMinutes = C.windowMinutes) {
+/**
+ * Deterministic-but-daily slot: the minute-of-day this connection fires.
+ * Hash(connId + dayKey) — stable within one Pacific day, re-rolled when the
+ * day changes (and therefore after every reset). Restart-safe: same day =
+ * same slot, and the 6h throttle plus todayUsed bound any double-fire.
+ * Window [windowStartHour, windowEndHour) keeps touches in daylight-ish
+ * hours; the dayKey in the hash is what makes the hour change daily.
+ */
+export function slotMinuteOfDay(connectionId, dayKey, startHour = C.windowStartHour, endHour = C.windowEndHour) {
+  const s = `${connectionId}::${dayKey}`;
   let h = 0;
-  const s = String(connectionId || "x");
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return h % windowMinutes;
+  for (let i = 0; i < s.length; i++) h = ((h * 131) + s.charCodeAt(i)) >>> 0;
+  const windowMinutes = Math.max(60, (endHour - startHour) * 60);
+  return startHour * 60 + (h % windowMinutes);
 }
 
 /** Pick cheapest model the current balance can afford. Returns [model, price] or [null, 0]. */
@@ -84,9 +102,43 @@ async function usedNaturallyToday(connection, dayKey) {
   }
 }
 
+// ── maturity state helpers (persisted on the connection row) ──────────────
+
+function maturityState(connection) {
+  return connection.providerSpecificData?.maturity || {};
+}
+
+/** Anti-blind loop: 3 consecutive touch-days without streak advance → warn + stop. */
+function isBlindBlocked(m) {
+  return m.warn === true || (m.noAdvanceDays || 0) >= C.noAdvanceLimit;
+}
+
+async function saveMaturity(conn, patch) {
+  await updateProviderConnection(conn.id, {
+    providerSpecificData: {
+      ...(conn.providerSpecificData || {}),
+      maturity: { ...(conn.providerSpecificData?.maturity || {}), ...patch },
+    },
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 async function runStreakForConnection(connection, proxyOptions) {
   const dayKey = pacificDayKey();
   const connId = connection.id;
+  const m = maturityState(connection);
+
+  // Anti-blind loop: automation stopped itself after repeated no-advance days.
+  if (isBlindBlocked(m)) {
+    return { skipped: true, reason: "maturity warned (3 days no streak advance) — manual re-enable required" };
+  }
+
+  // Target reached earlier → released; only re-engage if the streak lapsed
+  // below the target again (mirrors maturityRelockWatch: 2 consecutive
+  // below-target days re-arm; one bad day is noise).
+  if (m.released && m.releasedTarget > 0 && m.lastStreak >= m.releasedTarget - 1) {
+    return { skipped: true, reason: "target reached — released" };
+  }
 
   if (await usedNaturallyToday(connection, dayKey)) {
     return { skipped: true, reason: "already active today" };
@@ -98,6 +150,11 @@ async function runStreakForConnection(connection, proxyOptions) {
   // recorded today — skip without spending anything.
   if (usage?.streak?.todayUsed === true) {
     return { skipped: true, reason: "upstream says active today (streak)" };
+  }
+  // Health gate: never poke an account upstream already flagged.
+  if (usage?.activeInstance === null && usage?.message?.includes("banned")) {
+    await saveMaturity(connection, { warn: true, lastResult: "skip:banned" });
+    return { skipped: true, reason: "account flagged upstream (banned) — automation stopped" };
   }
   const remaining = Number(usage?.freebucks?.daily?.remaining);
   const prices = usage?.freebucks?.prices || {};
@@ -142,14 +199,35 @@ async function runStreakForConnection(connection, proxyOptions) {
   // drain the stream so the run completes honestly
   await response.text().catch(() => {});
 
+  const streakNow = Number(usage?.streak?.streak);
+  const prevStreak = Number.isFinite(m.lastStreak) ? m.lastStreak : null;
+  const advanced = prevStreak === null ? true : streakNow > prevStreak || usage?.streak?.todayUsed === true;
+  const noAdvanceDays = advanced ? 0 : (m.noAdvanceDays || 0) + 1;
+  const reachedTarget = streakNow >= (m.target || C.targetDays);
+  const warn = noAdvanceDays >= C.noAdvanceLimit;
+
   await updateProviderConnection(connId, {
     lastStreakDayKey: dayKey,
     lastStreakAt: new Date().toISOString(),
     lastStreakModel: model,
     lastStreakCost: price,
+    providerSpecificData: {
+      ...(connection.providerSpecificData || {}),
+      maturity: {
+        ...m,
+        lastStreak: Number.isFinite(streakNow) ? streakNow : m.lastStreak,
+        lastTouchDay: dayKey,
+        lastResult: "ok",
+        lastAdvanced: advanced ? "yes" : "no",
+        noAdvanceDays: warn ? C.noAdvanceLimit : noAdvanceDays,
+        warn: warn || m.warn === true,
+        released: reachedTarget ? true : m.released === true,
+        releasedTarget: reachedTarget ? (m.target || C.targetDays) : m.releasedTarget,
+      },
+    },
     updatedAt: new Date().toISOString(),
   });
-  return { skipped: false, model, price };
+  return { skipped: false, model, price, advanced, noAdvanceDays, reachedTarget, streakNow };
 }
 
 async function processConnections(now = new Date()) {
@@ -163,6 +241,7 @@ async function processConnections(now = new Date()) {
     .map(([id]) => id);
   if (enabledIds.length === 0) return;
 
+  const dayKey = pacificDayKey(now.getTime());
   const minutesNow = now.getHours() * 60 + now.getMinutes();
   const startMin = (Number(cfg.windowStartHour) || C.windowStartHour) * 60;
   const endMin = (Number(cfg.windowEndHour) || C.windowEndHour) * 60;
@@ -171,10 +250,17 @@ async function processConnections(now = new Date()) {
     if (!enabledIds.includes(conn.id)) continue;
     if (shouldSkipAfterFailure(conn.id)) continue;
 
-    // per-connection slot inside the window — accounts fire one by one,
-    // never simultaneously (anti-farm), even if all are enabled
-    const slot = startMin + slotOffsetMinutes(conn.id, Math.max(1, endMin - startMin));
-    if (minutesNow < slot) continue; // window not reached for this account yet
+    // 6h restart-safe throttle: even if a slot re-rolls after a restart, the
+    // same connection cannot fire twice within 6 hours (worst case one extra
+    // cheap touch, bounded — freebuff-proxy maturityThrottle parity).
+    const lastMs = g.lastTouch[conn.id] || (conn.lastStreakAt ? new Date(conn.lastStreakAt).getTime() : 0);
+    if (lastMs && now.getTime() - lastMs < C.touchThrottleMs) continue;
+
+    // DAILY RE-ROLLED SLOT (maturity parity): minute-of-day derived from
+    // hash(connId + pacificDay) — changes every day AND per account, so no
+    // fixed-hour pattern exists. Accounts still never fire simultaneously.
+    const slot = slotMinuteOfDay(conn.id, dayKey, startMin / 60, endMin / 60);
+    if (minutesNow < slot) continue; // slot not reached yet today
 
     const proxyCfg = await resolveConnectionProxyConfig(conn.providerSpecificData).catch(() => ({}));
     const proxyOptions = {
@@ -190,7 +276,10 @@ async function processConnections(now = new Date()) {
       if (r.skipped) {
         console.log(`[FB_STREAK] ${conn.name}: skip — ${r.reason}`);
       } else {
-        console.log(`[FB_STREAK] ${conn.name}: streak ok — ${r.model} (${r.price} fb)`);
+        const warnLine = r.warn ? " | WARN: no-advance limit reached, automation paused" : "";
+        const releaseLine = r.reachedTarget ? ` | TARGET REACHED (${r.streakNow} days) — auto-released` : "";
+        console.log(`[FB_STREAK] ${conn.name}: streak ok — ${r.model} (${r.price} fb)${releaseLine}${warnLine}`);
+        g.lastTouch[conn.id] = now.getTime();
       }
     } catch (e) {
       g.failureCache[conn.id] = Date.now();
