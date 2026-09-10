@@ -12,6 +12,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null); // button wrapper
   const proxyMenuRef = useRef(null); // portal menu (outside this DOM subtree)
+  // Model pin dropdown (freebuff) — mirrors the proxy dropdown interaction
+  const [showPinDropdown, setShowPinDropdown] = useState(false);
+  const [pinMenuPos, setPinMenuPos] = useState(null);
+  const pinDropdownRef = useRef(null);
+  const pinMenuRef = useRef(null);
   // Portal-anchored dropdown: the connection list is a max-h/overflow-y-auto
   // container, so an absolutely-positioned dropdown inside it gets clipped and
   // the browser force-scrolls the container (the "page jumps/scrolls" bug on
@@ -34,7 +39,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   const autoPingTooltip = autoPing?.provider === "codex"
     ? "Auto-starts the next 5h Codex window after reset by sending a tiny gpt-5.5 request. Consumes a small amount of quota."
     : autoPing?.provider === "freebuff"
-      ? "Daily streak: one tiny chat per day on the cheapest model (only if unused today). Turn OFF when using the account yourself."
+      ? "Daily streak: once a day, sends one tiny chat on the cheapest model if the account has not been used. Turn off if you plan to use it yourself."
       : "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.";
 
   let maskedProxyUrl = "";
@@ -110,6 +115,48 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
       setUpdatingProxy(false);
       setShowProxyDropdown(false);
     }
+  };
+useEffect(() => {
+    if (!showPinDropdown) return;
+    const handler = (e) => {
+      const inBtn = pinDropdownRef.current?.contains(e.target);
+      const inMenu = pinMenuRef.current?.contains(e.target);
+      if (!inBtn && !inMenu) setShowPinDropdown(false);
+    };
+    const close = (e) => {
+      if (pinMenuRef.current && e?.target && pinMenuRef.current.contains(e.target)) return;
+      setShowPinDropdown(false);
+    };
+    document.addEventListener("mousedown", handler);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [showPinDropdown]);
+
+
+  const togglePinDropdown = () => {
+    if (showPinDropdown) {
+      setShowPinDropdown(false);
+      return;
+    }
+    const rect = pinDropdownRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const MENU_H = 288;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const top = spaceBelow >= MENU_H + 8
+      ? rect.bottom + 6
+      : Math.max(8, rect.top - MENU_H - 6);
+    setPinMenuPos({ right: window.innerWidth - rect.right, top });
+    setShowPinDropdown(true);
+  };
+
+  const handleSelectPin = async (modelId) => {
+    await modelPin.onSelect(modelId === "__none__" ? null : modelId);
+    setShowPinDropdown(false);
   };
 
   const rowAuthType = connection.authType || (isOAuth ? "oauth" : "apikey");
@@ -306,28 +353,30 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             </Tooltip>
           )}
           {modelPin && (
-            <div className="relative">
-              <Tooltip text={modelPin.tooltip} position="bottom">
-                <button
-                  onClick={modelPin.onToggleMenu}
-                  className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${modelPin.pinnedModel ? "text-primary" : "text-text-muted hover:text-primary"}`}
+            <div className="relative" ref={pinDropdownRef}>
+              <button
+                onClick={togglePinDropdown}
+                className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${modelPin.pinnedModel ? "text-primary" : "text-text-muted hover:text-primary"}`}
+              >
+                <span className="material-symbols-outlined text-[18px]">push_pin</span>
+                <span className="max-w-[64px] truncate text-[10px] leading-tight">{modelPin.pinnedModel ? modelPin.pinnedModel.split("/").pop() : "Pin"}</span>
+              </button>
+              {showPinDropdown && pinMenuPos && typeof document !== "undefined" && createPortal(
+                <div
+                  ref={pinMenuRef}
+                  style={{ position: "fixed", right: pinMenuPos.right, top: pinMenuPos.top, width: "max-content" }}
+                  className="z-[9999] max-w-[78vw] max-h-[288px] overflow-y-auto overscroll-contain rounded-lg border border-border bg-bg py-1 shadow-lg"
                 >
-                  <span className="material-symbols-outlined text-[18px]">push_pin</span>
-                  <span className="max-w-[52px] truncate text-[10px] leading-tight">{modelPin.pinnedModel ? modelPin.pinnedModel.split("/").pop() : "Pin"}</span>
-                </button>
-              </Tooltip>
-              {modelPin.open && typeof document !== "undefined" && createPortal(
-                <div style={{ position: "fixed", right: 8, top: modelPin.menuTop ?? 200 }} className="z-[9999] max-h-[288px] max-w-[78vw] overflow-y-auto overscroll-contain rounded-lg border border-border bg-bg py-1 shadow-lg">
                   <button
-                    onClick={() => modelPin.onSelect("")}
+                    onClick={() => handleSelectPin("__none__")}
                     className={`block w-full whitespace-nowrap px-3 py-1.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!modelPin.pinnedModel ? "text-primary font-medium" : "text-text-main"}`}
                   >
-                    None (unpinned)
+                    None
                   </button>
                   {(modelPin.models || []).map((m) => (
                     <button
                       key={m}
-                      onClick={() => modelPin.onSelect(m)}
+                      onClick={() => handleSelectPin(m)}
                       className={`block w-full whitespace-nowrap px-3 py-1.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5 ${modelPin.pinnedModel === m ? "text-primary font-medium" : "text-text-main"}`}
                     >
                       {m}
