@@ -101,6 +101,42 @@ function jsonError(status, message, type = "upstream_error", extra = {}) {
   return { response: new Response(JSON.stringify({ error: { message, type, ...extra } }), { status, headers: { "Content-Type": "application/json" } }) };
 }
 
+// 428 waiting_room_required — the upstream gate demands the CLI's pre-session
+// "ad chain" before the next session create (issue #94 parity): POST
+// /api/v1/ads for gravity + zeroclick (Freebuff-CLI UA on the wire, Chrome UA
+// in the body, surface "waiting_room"), then GET /freebuff/streak. Strictly
+// best-effort — the session row stays valid, nothing is invalidated.
+async function fireWaitingRoomChain(token, signal) {
+  const CHROME_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    "User-Agent": "Freebuff-CLI/1.0.0",
+    "Content-Type": "application/json",
+  };
+  for (const provider of ["gravity", "zeroclick"]) {
+    try {
+      await proxyAwareFetch(`${UPSTREAM}/ads`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          provider,
+          messages: [],
+          device: { os: "windows", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Jakarta", locale: "id-ID" },
+          userAgent: CHROME_UA,
+          surface: "waiting_room",
+        }),
+        signal,
+      });
+    } catch { /* best-effort — swallow like the proxy does */ }
+  }
+  try {
+    await proxyAwareFetch(`${UPSTREAM}/freebuff/streak`, {
+      headers: { Authorization: `Bearer ${token}`, "User-Agent": "Bun/1.3.14", Accept: "application/json" },
+      signal,
+    });
+  } catch { /* best-effort */ }
+}
+
 export class FreebuffExecutor extends BaseExecutor {
   constructor() {
     super();
@@ -312,6 +348,28 @@ export class FreebuffExecutor extends BaseExecutor {
     // 404 "No endpoints found" = the upstream routing node behind THIS instance
     // is gone (handshake reuses the same instance; only a fresh one lands on a
     // healthy node). Treat like 409: rotate honestly and re-handshake once.
+    // 428 waiting_room_required (issue #94 parity): the session row is FINE —
+    // the account just needs the CLI's pre-session ad-chain before the next
+    // create. Fire the chain, honor Retry-After briefly, retry in place ONCE.
+    // No cooldown, no session invalidation (freebuff-proxy classify.go).
+    if (response.status === 428) {
+      const errText428 = await response.text().catch(() => "");
+      if (errText428.includes("waiting_room_required")) {
+        await fireWaitingRoomChain(token, signal);
+        response = null;
+        try {
+          session = await this.acquireSession(token, requestedModel, agentId, proxyOptions);
+          response = await doChat(session);
+        } catch (err) {
+          if (err?.status === 429) {
+            tokenCooldown.set(token, { until: Date.now() + 6 * 60 * 60 * 1000, reason: "upstream 429" });
+            return jsonError(429, `FreeBuff quota: ${err.message}`, "rate_limit_error", { retryAfter: 6 * 3600 });
+          }
+          return jsonError(502, err.message || "FreeBuff upstream error");
+        }
+      }
+    }
+
     if (response.status === 404) {
       const errText404 = await response.text().catch(() => "");
       if (errText404.includes("No endpoints found")) {
