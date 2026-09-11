@@ -26,6 +26,7 @@ export default {
       combined: true,
       header: "Authorization",
       scheme: "bearer",
+      preserveHookAuth: true,
       hooks: [
         "clineHeaders",
       ],
