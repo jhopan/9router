@@ -1,6 +1,7 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
 import { BaseExecutor } from "./base.js";
+import { FREEBUFF_WAITING_ROOM } from "../config/errorConfig.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { renameRequestTools, restoreResponseToolNames, restoreStreamToolNames } from "./freebuffToolMap.js";
 
@@ -355,11 +356,23 @@ export class FreebuffExecutor extends BaseExecutor {
     // create. Fire the chain, honor Retry-After briefly, retry in place ONCE.
     // No cooldown, no session invalidation (freebuff-proxy classify.go).
     if (response.status === 428) {
+      // waiting_room_required = the upstream ADMISSION QUEUE (freebuff-proxy
+      // acquire_route: WaitingRoomError carries Position/QueueDepth/Retry-After;
+      // the pool surfaces it to the client rather than forcing entry). The
+      // correct behavior is to WAIT for the queue slot: honor the upstream
+      // Retry-After (clamped), fire the ad-chain per round, retry until the
+      // budget runs out — then surface the error with the real wait time.
       const errText428 = await response.text().catch(() => "");
       if (errText428.includes("waiting_room_required")) {
-        // Upstream's gate can take a few seconds to register the ad-chain —
-        // allow up to two chain+retry rounds before surfacing the error.
-        for (let round = 0; round < 2 && response?.status === 428; round++) {
+        const waitBudget = Date.now() + FREEBUFF_WAITING_ROOM.maxWaitMs;
+        let retryAfterMs = FREEBUFF_WAITING_ROOM.firstWaitMs;
+        while (response?.status === 428 && Date.now() < waitBudget) {
+          const raHeader = Number(response.headers?.get("retry-after"));
+          if (Number.isFinite(raHeader) && raHeader > 0) {
+            retryAfterMs = Math.min(raHeader * 1000, 30_000);
+          }
+          await new Promise((r) => setTimeout(r, retryAfterMs));
+          if (signal?.aborted) break;
           await fireWaitingRoomChain(token, signal);
           response = null;
           try {
@@ -372,6 +385,12 @@ export class FreebuffExecutor extends BaseExecutor {
             }
             return jsonError(502, err.message || "FreeBuff upstream error");
           }
+        }
+        // Still queued after budget → surface with the remaining wait so the
+        // client retries later instead of hammering.
+        if (response?.status === 428) {
+          const waitMin = Math.max(1, Math.ceil(FREEBUFF_WAITING_ROOM.maxWaitMs / 60000));
+          return jsonError(503, `FreeBuff waiting room: session expired and the admission queue is full — retry in ~${waitMin}m`, "rate_limit_error", { retryAfter: FREEBUFF_WAITING_ROOM.maxWaitMs / 1000 });
         }
       }
     }

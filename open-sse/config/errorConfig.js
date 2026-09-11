@@ -41,6 +41,14 @@ export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 // Hard cap for provider-reported rate limit cooldown (e.g. codex resets_at can be 5-6h)
 export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 
+// FreeBuff waiting room (428): the admission queue after a session expires.
+// The executor waits in-request (honoring upstream Retry-After) up to the
+// budget, then surfaces a 503 with the real wait.
+export const FREEBUFF_WAITING_ROOM = {
+  firstWaitMs: 5000,       // first retry delay
+  maxWaitMs: 90_000,       // total in-request wait budget (90s)
+};
+
 // Cooldown durations (ms)
 const COOLDOWN = {
   long: 2 * 60 * 1000,
