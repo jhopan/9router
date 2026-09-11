@@ -357,17 +357,21 @@ export class FreebuffExecutor extends BaseExecutor {
     if (response.status === 428) {
       const errText428 = await response.text().catch(() => "");
       if (errText428.includes("waiting_room_required")) {
-        await fireWaitingRoomChain(token, signal);
-        response = null;
-        try {
-          session = await this.acquireSession(token, requestedModel, agentId, proxyOptions);
-          response = await doChat(session);
-        } catch (err) {
-          if (err?.status === 429) {
-            tokenCooldown.set(token, { until: Date.now() + 6 * 60 * 60 * 1000, reason: "upstream 429" });
-            return jsonError(429, `FreeBuff quota: ${err.message}`, "rate_limit_error", { retryAfter: 6 * 3600 });
+        // Upstream's gate can take a few seconds to register the ad-chain —
+        // allow up to two chain+retry rounds before surfacing the error.
+        for (let round = 0; round < 2 && response?.status === 428; round++) {
+          await fireWaitingRoomChain(token, signal);
+          response = null;
+          try {
+            session = await this.acquireSession(token, requestedModel, agentId, proxyOptions);
+            response = await doChat(session);
+          } catch (err) {
+            if (err?.status === 429) {
+              tokenCooldown.set(token, { until: Date.now() + 6 * 60 * 60 * 1000, reason: "upstream 429" });
+              return jsonError(429, `FreeBuff quota: ${err.message}`, "rate_limit_error", { retryAfter: 6 * 3600 });
+            }
+            return jsonError(502, err.message || "FreeBuff upstream error");
           }
-          return jsonError(502, err.message || "FreeBuff upstream error");
         }
       }
     }
