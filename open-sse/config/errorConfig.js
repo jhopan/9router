@@ -45,8 +45,8 @@ export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 // The executor waits in-request (honoring upstream Retry-After) up to the
 // budget, then surfaces a 503 with the real wait.
 export const FREEBUFF_WAITING_ROOM = {
-  firstWaitMs: 5000,       // first retry delay
-  maxWaitMs: 90_000,       // total in-request wait budget (90s)
+  firstWaitMs: 5000,        // first retry delay
+  maxWaitMs: 5 * 60_000,    // total in-request wait budget (5 min — queue can be slow)
 };
 
 // Cooldown durations (ms)

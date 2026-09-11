@@ -32,6 +32,7 @@ import { renameRequestTools, restoreResponseToolNames, restoreStreamToolNames } 
  */
 
 const UPSTREAM = "https://www.codebuff.com/api/v1";
+const RE_ADMIT_LEAD_MS = 90 * 1000; // pre-emptive re-admit lead (CLI parity: 60s; kita 90s utk aman)
 const SESSION_TTL_MS = 5 * 60 * 60 * 1000; // < the 6h run rotation window
 const JITTER_MAX_MS = 200;
 
@@ -148,11 +149,38 @@ export class FreebuffExecutor extends BaseExecutor {
 
   // ── session pool (per token+model — upstream binds a session to one model;
   //    switching models on a live session returns 409 "restart to switch") ──
+  // Pool-aware entry: hot session? ride it (with pre-emptive re-admit when
+  // it is about to expire). Otherwise delegate to the raw handshake.
   async acquireSession(token, requestedModel, agentId, proxyOptions) {
     const now = Date.now();
     const poolKey = `${token}::${requestedModel}`;
     const existing = sessionPool.get(poolKey);
-    if (existing && existing.runId && now < existing.expiresAt) return existing;
+    if (existing && existing.runId && now < existing.expiresAt) {
+      // Pre-emptive re-admit (freebuff-proxy issue #99, SESSION_RE_ADMIT_LEAD
+      // 60s parity): when the cached session expires within the lead window,
+      // fire an async re-admit — this request still rides the old (valid)
+      // session, the next one gets the fresh instance. This is what keeps
+      // the CLI from ever seeing the waiting room.
+      if (existing.expiresAt - now < RE_ADMIT_LEAD_MS && !existing.reAdmitFired) {
+        existing.reAdmitFired = true;
+        void (async () => {
+          try {
+            await fireWaitingRoomChain(token, null);
+            const fresh = await this.acquireSessionRaw(token, requestedModel, agentId, proxyOptions);
+            if (fresh?.instanceId !== existing.instanceId) sessionPool.set(poolKey, fresh);
+            else existing.reAdmitFired = false;
+          } catch { /* next request retries */ }
+        })();
+      }
+      return existing;
+    }
+    return this.acquireSessionRaw(token, requestedModel, agentId, proxyOptions);
+  }
+
+  // Raw handshake: single-flight handshake + agent-runs START + pool set.
+  async acquireSessionRaw(token, requestedModel, agentId, proxyOptions) {
+    const now = Date.now();
+    const poolKey = `${token}::${requestedModel}`;
 
     // single-flight: concurrent requests share one handshake
     if (inflight.has(poolKey)) return inflight.get(poolKey);
