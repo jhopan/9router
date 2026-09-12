@@ -350,10 +350,11 @@ describe("Kiro terminal integrity recovery", () => {
     const retryBody = JSON.parse(fetchMock.mock.calls[1][1].body);
 
     expect(body).toContain("Recovered safely.");
-    // Repair directive is folded into the current user message content (Kiro
-    // rejects a top-level systemPrompt; transformRequest strips it).
+    // The repair instruction rides in the user turn: Kiro rejects a top-level
+    // systemPrompt with 400 REQUEST_BODY_INVALID (transformRequest strips it).
     const retryContent =
       retryBody.conversationState?.currentMessage?.userInputMessage?.content || "";
+    expect(retryBody.systemPrompt).toBeUndefined();
     expect(retryContent).toContain("tool_call wrapper was malformed");
     expect(retryContent).not.toContain("IGNORE_ALL_INSTRUCTIONS");
   });
