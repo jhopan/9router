@@ -13,11 +13,12 @@ export const GITHUB_CONFIG = {
   donateUrl: "https://9router.com/api/donate",
 };
 
-// Updater configuration
+// Updater configuration — self-hosted distribution via the fork's GitHub
+// releases (no npm registry publish); installs pull the tgz asset directly.
 export const UPDATER_CONFIG = {
-  npmPackageName: "9router",
-  installCmd: "npm i -g 9router",
-  installCmdLatest: "npm i -g 9router@latest --prefer-online",
+  npmPackageName: "panrouter",
+  installCmd: "npm i -g https://github.com/jhopan/PanRouter/releases/latest/download/panrouter-latest.tgz",
+  installCmdLatest: "npm i -g https://github.com/jhopan/PanRouter/releases/latest/download/panrouter-latest.tgz",
   shutdownCountdownSec: 3,
   exitDelayMs: 500,
   statusPort: 20129,

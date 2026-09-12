@@ -3,8 +3,8 @@ name: Release
 # Trigger: push a version tag (git tag v0.5.60 && git push origin v0.5.60)
 # Creates TWO releases:
 #   1. Versioned release (v0.5.60) — with auto-generated notes from commits
-#   2. "latest" release — always points to the newest build, stable 9router.tgz URL
-# README install command uses releases/latest/download/9router.tgz
+#   2. "latest" release — always points to the newest build, stable panrouter.tgz URL
+# README install command uses releases/latest/download/panrouter.tgz
 
 on:
   push:
@@ -37,9 +37,9 @@ jobs:
 
       - name: Prepare tgz files
         run: |
-          find .. -maxdepth 1 -name "9router-*.tgz" -exec mv {} . \;
-          cp 9router-*.tgz 9router.tgz
-          cp 9router.tgz 9router-latest.tgz
+          find .. -maxdepth 1 -name "panrouter-*.tgz" -exec mv {} . \;
+          cp panrouter-*.tgz panrouter.tgz
+          cp panrouter.tgz panrouter-latest.tgz
           ls -la *.tgz
 
       - name: Resolve version
@@ -72,9 +72,9 @@ jobs:
 
           gh release create "v${VERSION}" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "9Router v${VERSION}" \
+            --title "PanRouter v${VERSION}" \
             --notes "$NOTES" \
-            9router.tgz "9router-${VERSION}.tgz"
+            panrouter.tgz "panrouter-${VERSION}.tgz"
 
       - name: Move 'latest' tag to this commit
         run: |
@@ -94,10 +94,10 @@ jobs:
           gh release create latest \
             --repo "$GITHUB_REPOSITORY" \
             --title "Latest CLI Release" \
-            --notes "Automated build of the latest 9Router CLI package.
+            --notes "Automated build of the latest PanRouter CLI package (by Jhopanstore).
 
           Currently pointing to **v${VERSION}**.
 
-          For a specific version, see the [releases page](https://github.com/jhopan/9router/releases)." \
+          For a specific version, see the [releases page](https://github.com/jhopan/PanRouter/releases)." \
             --latest \
-            9router.tgz "9router-${VERSION}.tgz" "9router-latest.tgz"
+            panrouter.tgz "panrouter-${VERSION}.tgz" "panrouter-latest.tgz"

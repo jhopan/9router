@@ -1,9 +1,10 @@
 {
-  "name": "9router",
+  "name": "panrouter",
   "version": "0.5.75.3",
-  "description": "9Router CLI - Start and manage 9Router server",
+  "description": "PanRouter CLI - Start and manage PanRouter server (by Jhopanstore)",
   "bin": {
-    "9router": "./cli.js"
+    "panrouter": "./cli.js",
+    "pan": "./cli.js"
   },
   "files": [
     "cli.js",
@@ -34,7 +35,8 @@
     "node": ">=18.0.0"
   },
   "keywords": [
-    "9router",
+    "panrouter",
+    "jhopanstore",
     "cli",
     "proxy",
     "ai",

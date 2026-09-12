@@ -55,7 +55,7 @@ try { ensureTrayRuntime({ silent: true }); } catch {}
 const APP_NAME = pkg.name; // Use from package.json
 // Self-hosted distribution: installs come from this fork's GitHub releases
 // (no npm registry publish), so the "update" flow points at the tgz asset.
-const INSTALL_CMD_LATEST = `npm i -g https://github.com/jhopan/9router/releases/latest/download/9router-latest.tgz`;
+const INSTALL_CMD_LATEST = `npm i -g https://github.com/jhopan/PanRouter/releases/latest/download/panrouter-latest.tgz`;
 
 const DEFAULT_PORT = 20128;
 const DEFAULT_HOST = "0.0.0.0";
@@ -412,7 +412,7 @@ function isRestrictedEnvironment() {
 // Update check against the fork's GitHub releases (jhopan/9router).
 // Compares the latest release tag with the CLI's own version; any network
 // failure returns null so the menu simply hides the update row (fail-open).
-const UPDATE_RELEASES_URL = "https://api.github.com/repos/jhopan/9router/releases?per_page=15";
+const UPDATE_RELEASES_URL = "https://api.github.com/repos/jhopan/PanRouter/releases?per_page=15";
 
 function compareVersions(a, b) {
   const pa = String(a).split(".").map((n) => parseInt(n, 10) || 0);
