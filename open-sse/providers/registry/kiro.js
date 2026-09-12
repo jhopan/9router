@@ -28,6 +28,7 @@ export default {
     // reached the working surface.
     baseUrl: "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",
     baseUrls: [
+      "https://runtime.us-east-1.kiro.dev/generateAssistantResponse",
       "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",
       "https://q.us-east-1.amazonaws.com/generateAssistantResponse",
     ],

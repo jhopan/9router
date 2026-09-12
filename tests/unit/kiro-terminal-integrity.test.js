@@ -115,15 +115,7 @@ async function text(stream) {
 async function execute(executor = new KiroExecutor(), overrides = {}) {
   return executor.execute({
     model: "kr/claude-opus-4.8",
-    body: {
-      systemPrompt: "base",
-      conversationState: {
-        currentMessage: {
-          userInputMessage: { content: "user turn", modelId: "claude-opus-4.8", origin: "AI_EDITOR" },
-        },
-        history: [],
-      },
-    },
+    body: { conversationState: { currentMessage: { userInputMessage: { content: "base", modelId: "m" } } } },
     stream: true,
     credentials,
     ...overrides
@@ -714,16 +706,16 @@ describe("Kiro terminal integrity recovery", () => {
   });
 
   it("surfaces retry HTTP failures as SSE after heartbeat commits headers", async () => {
+    const unauthorized = () => new Response("unauthorized", {
+      status: 401,
+      statusText: "Unauthorized"
+    });
     fetchMock
       .mockResolvedValueOnce(response([]))
-      .mockResolvedValueOnce(new Response("unauthorized", {
-        status: 401,
-        statusText: "Unauthorized"
-      }))
-      .mockResolvedValueOnce(new Response("unauthorized", {
-        status: 401,
-        statusText: "Unauthorized"
-      }));
+      // Exhaust every retry/surface combination (3 surfaces + network-error
+      // retries on the undefined-mock tail) so the executor returns its
+      // terminal error instead of cycling on exhausted mocks.
+      .mockResolvedValue(unauthorized());
 
     const result = await execute();
     const body = await result.response.text();
@@ -740,7 +732,7 @@ describe("Kiro terminal integrity recovery", () => {
         status: 401,
         statusText: "Unauthorized"
       }))
-      .mockResolvedValueOnce(new Response(`error-start-${"y".repeat(10_000)}-error-tail`, {
+      .mockResolvedValue(new Response(`error-start-${"y".repeat(10_000)}-error-tail`, {
         status: 401,
         statusText: "Unauthorized"
       }));

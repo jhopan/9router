@@ -326,9 +326,6 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   responseBody = unwrapClineEnvelope(responseBody, provider);
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
-  // Unwrap AFTER logging (raw envelope stays in the log for forensics) but
-  // BEFORE usage extraction/translation so choices/usage resolve downstream.
-  responseBody = unwrapDataEnvelope(responseBody);
   if (onRequestSuccess) {
     Promise.resolve()
       .then(onRequestSuccess)
