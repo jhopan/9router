@@ -53,7 +53,9 @@ try { ensureTrayRuntime({ silent: true }); } catch {}
 
 // Configuration constants
 const APP_NAME = pkg.name; // Use from package.json
-const INSTALL_CMD_LATEST = `npm i -g ${APP_NAME}@latest --prefer-online`;
+// Self-hosted distribution: installs come from this fork's GitHub releases
+// (no npm registry publish), so the "update" flow points at the tgz asset.
+const INSTALL_CMD_LATEST = `npm i -g https://github.com/jhopan/9router/releases/latest/download/9router-latest.tgz`;
 
 const DEFAULT_PORT = 20128;
 const DEFAULT_HOST = "0.0.0.0";
@@ -407,9 +409,51 @@ function isRestrictedEnvironment() {
   return null;
 }
 
-// Update check disabled — this is a self-maintained fork, updates are manual.
+// Update check against the fork's GitHub releases (jhopan/9router).
+// Compares the latest release tag with the CLI's own version; any network
+// failure returns null so the menu simply hides the update row (fail-open).
+const UPDATE_RELEASES_URL = "https://api.github.com/repos/jhopan/9router/releases?per_page=15";
+
+function compareVersions(a, b) {
+  const pa = String(a).split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
 function checkForUpdate() {
-  return Promise.resolve(null);
+  if (process.env.PANROUTER_DISABLE_UPDATE_CHECK === "1") return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve(null), 5000);
+    fetch(UPDATE_RELEASES_URL, {
+      headers: { Accept: "application/vnd.github+json", "User-Agent": "PanRouter-CLI" },
+      signal: AbortSignal.timeout(5000),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((releases) => {
+        clearTimeout(timeout);
+        if (!Array.isArray(releases)) return resolve(null);
+        // The repo keeps a permanent release tagged "latest" (asset alias),
+        // so /releases/latest would always resolve to a non-semver tag. Pick
+        // the highest ^v semver tag across recent releases instead.
+        let best = null;
+        for (const rel of releases) {
+          const tag = String(rel?.tag_name || "");
+          if (!/^v\d+([.]\d+)*$/.test(tag)) continue;
+          const ver = tag.replace(/^v/, "");
+          if (!best || compareVersions(ver, best) > 0) best = ver;
+        }
+        if (!best) return resolve(null);
+        resolve(compareVersions(best, pkg.version) > 0 ? best : null);
+      })
+      .catch(() => {
+        clearTimeout(timeout);
+        resolve(null);
+      });
+  });
 }
 
 // Open browser
@@ -471,7 +515,7 @@ async function showInterfaceMenu(latestVersion) {
     serverUrl = `http://${displayHost}:${port}`;
   }
 
-  const subtitle = `🚀 Server: \x1b[32m${serverUrl}\x1b[0m`;
+  const subtitle = `🚀 Server: \x1b[32m${serverUrl}\x1b[0m   \x1b[2mBy Jhopanstore\x1b[0m`;
 
   const menuItems = [];
 
@@ -486,7 +530,7 @@ async function showInterfaceMenu(latestVersion) {
     { label: "Exit", icon: "🚪" }
   );
 
-  const selected = await selectMenu(`Choose Interface (v${pkg.version})`, menuItems, 0, subtitle);
+  const selected = await selectMenu(`PanRouter (v${pkg.version})`, menuItems, 0, subtitle);
 
   const offset = latestVersion ? 1 : 0;
 
@@ -682,7 +726,7 @@ function startServer(updatePromise) {
             process.on("SIGHUP", () => {});
 
             console.log(`\n⏳ Switching to tray mode... (icon already visible in menu bar)`);
-            console.log(`🔔 9Router is running in tray (PID: ${process.pid})`);
+            console.log(`🔔 PanRouter is running in tray (PID: ${process.pid})`);
             console.log(`   Server: http://${displayHost}:${port}`);
             console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
 
@@ -701,7 +745,7 @@ function startServer(updatePromise) {
           });
           bgProcess.unref();
 
-          console.log(`🔔 9Router is now running in background (PID: ${bgProcess.pid})`);
+          console.log(`🔔 PanRouter is now running in background (PID: ${bgProcess.pid})`);
           console.log(`   Server: http://${displayHost}:${port}`);
           console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
 
