@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
+import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
 function rowToKey(row) {
   if (!row) return null;
@@ -10,6 +11,7 @@ function rowToKey(row) {
     machineId: row.machineId,
     isActive: row.isActive === 1 || row.isActive === true,
     createdAt: row.createdAt,
+    limits: parseJson(row.limits, null),
   };
 }
 
@@ -51,10 +53,18 @@ export async function updateApiKey(id, data) {
   db.transaction(() => {
     const row = db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
     if (!row) return;
-    const merged = { ...rowToKey(row), ...data };
+    const prev = rowToKey(row);
+    const merged = { ...prev, ...data };
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, limits = ? WHERE id = ?`,
+      [
+        merged.key,
+        merged.name,
+        merged.machineId,
+        merged.isActive ? 1 : 0,
+        merged.limits ? stringifyJson(merged.limits) : null,
+        id,
+      ]
     );
     result = merged;
   });
@@ -72,4 +82,42 @@ export async function validateApiKey(key) {
   const row = db.get(`SELECT isActive FROM apiKeys WHERE key = ?`, [key]);
   if (!row) return false;
   return row.isActive === 1 || row.isActive === true;
+}
+
+export async function getApiKeyByKey(key) {
+  const db = await getAdapter();
+  return rowToKey(db.get(`SELECT * FROM apiKeys WHERE key = ?`, [key]));
+}
+
+// Replace the whole limits blob for a key (null clears it).
+export async function setApiKeyLimits(id, limits) {
+  const db = await getAdapter();
+  let result = null;
+  db.transaction(() => {
+    const row = db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
+    if (!row) return;
+    db.run(`UPDATE apiKeys SET limits = ? WHERE id = ?`, [
+      limits ? stringifyJson(limits) : null,
+      id,
+    ]);
+    result = rowToKey({ ...row, limits: limits ? stringifyJson(limits) : null });
+  });
+  return result;
+}
+
+// Atomic read-modify-write of usedTokens. `delta` is the post-cache token count
+// (caller computes prompt − cached + completion). Returns the updated limits.
+export async function addApiKeyUsage(id, delta) {
+  const db = await getAdapter();
+  let result = null;
+  db.transaction(() => {
+    const row = db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
+    if (!row) return;
+    const limits = parseJson(row.limits, null);
+    if (!limits) return;
+    const next = { ...limits, usedTokens: (limits.usedTokens || 0) + (delta || 0) };
+    db.run(`UPDATE apiKeys SET limits = ? WHERE id = ?`, [stringifyJson(next), id]);
+    result = next;
+  });
+  return result;
 }

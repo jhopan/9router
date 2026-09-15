@@ -130,4 +130,16 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     apiKey: apiKey || undefined,
     endpoint: endpoint || null
   }).catch(() => {});
+
+  // Per-key prepaid pool billing (cache-free): only runs for keys that carry a
+  // `limits` blob. Fail-open — a billing error must never break the response.
+  if (apiKey) {
+    import("@/lib/apiKeyLimits.js")
+      .then(async ({ billApiKey }) => {
+        const { getApiKeyByKey } = await import("@/lib/db/index.js");
+        const record = await getApiKeyByKey(apiKey);
+        if (record?.limits) await billApiKey(record.id, normalized);
+      })
+      .catch(() => {});
+  }
 }

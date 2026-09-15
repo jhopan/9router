@@ -9,6 +9,7 @@ import {
 } from "../services/auth.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
+import { checkApiKeyLimits } from "@/lib/apiKeyLimits.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -77,6 +78,16 @@ export async function handleChat(request, clientRawRequest = null) {
     if (!valid) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    }
+  }
+
+  // Per-key prepaid pool: model allowlist, token pool, expiry. Runs whenever a
+  // key is supplied AND carries a limits blob — legacy keys stay unlimited.
+  if (apiKey && modelStr) {
+    const limit = await checkApiKeyLimits(apiKey, modelStr);
+    if (!limit.ok) {
+      log.warn("AUTH", `API key limit: ${limit.code} — ${limit.message}`);
+      return errorResponse(limit.status, limit.message);
     }
   }
 

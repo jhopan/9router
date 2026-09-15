@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getApiKeys, createApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { mergeLimits, setApiKeyLimits } from "@/lib/apiKeyLimits.js";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { name } = body;
+    const { name, limits } = body;
 
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -29,11 +30,19 @@ export async function POST(request) {
     const machineId = await getConsistentMachineId();
     const apiKey = await createApiKey(name, machineId);
 
+    // Optional prepaid pool at creation time.
+    if (limits) {
+      const { limits: parsed } = { limits: mergeLimits(null, limits) };
+      await setApiKeyLimits(apiKey.id, parsed);
+      apiKey.limits = parsed;
+    }
+
     return NextResponse.json({
       key: apiKey.key,
       name: apiKey.name,
       id: apiKey.id,
       machineId: apiKey.machineId,
+      limits: apiKey.limits || null,
     }, { status: 201 });
   } catch (error) {
     console.log("Error creating key:", error);
