@@ -66,6 +66,14 @@ const COOLDOWN = {
  */
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
+  // Cline OAuth 401 "re-authenticate your Cline account" — refreshable token
+  // (OmniRoute #12594 parity): chatCore already attempts a token refresh on 401;
+  // the follow-up retry should come fast, not after a 2-minute cooldown.
+  { text: "re-authenticate your cline account", cooldownMs: COOLDOWN.short },
+  // Kiro IDC missing profileArn / wrong Q region — recoverable config issue,
+  // NOT a ban (OmniRoute #11809 parity). Short cooldown so the connection
+  // stays active and the retry succeeds after region/profile resolution.
+  { text: "user is not authorized to make this call", cooldownMs: COOLDOWN.short },
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },
