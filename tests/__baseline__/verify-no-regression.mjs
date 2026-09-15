@@ -11,10 +11,21 @@ const knownFails = new Set(
 const resultsPath = process.argv[2];
 if (!resultsPath) { console.error("Missing results.json path"); process.exit(2); }
 
+// Vitest reports absolute file paths; the baseline uses repo-relative
+// `tests/...` paths. Normalize so the gate works on Windows too (no `/app/`
+// segment there — the old split produced `undefined :: <test>` for every fail,
+// which flagged all known failures as regressions).
+function toBaselinePath(filePath) {
+  const p = String(filePath).replace(/\\/g, "/");
+  const marker = "/tests/";
+  const i = p.lastIndexOf(marker);
+  return i === -1 ? p : "tests/" + p.slice(i + marker.length);
+}
+
 const r = JSON.parse(readFileSync(resultsPath, "utf8"));
 const nowFails = r.testResults.flatMap(f =>
   f.assertionResults.filter(a => a.status === "failed")
-    .map(a => f.name.split("/app/")[1] + " :: " + a.fullName)
+    .map(a => toBaselinePath(f.name) + " :: " + a.fullName)
 );
 
 // Regression = fail bây giờ NHƯNG không có trong baseline known-fails

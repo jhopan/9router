@@ -1,3 +1,20 @@
+# v0.5.75.8 (2026-09-15)
+
+## Features
+- **Per-provider quota windows**: a free-tier refusal ("Daily free limit reached", "Weekly quota exceeded", …) now parks the account/model until the provider's **real reset time** instead of retrying it every few minutes on a 429 backoff.
+  - Reset is read from the provider's own usage API when available (Kiro `nextDateReset`, Antigravity `bucket.resetTime`, Codex `reset_at`, Grok billing period, CodeBuddy `CycleEndTime`, Kimi/GLM weekly & session windows, GitHub/Zed cycles) with a calendar fallback per cadence (daily / weekly / monthly / 5h session) when the usage API is silent or slow. Probes are cached per connection (5 min, 60 s on failure) and time-bounded, so a burst of failures costs one upstream call.
+  - The account stays **active** — it is skipped until the reset and recovers by itself. No manual re-enable, no request storm against a dead quota.
+  - All 24 usage providers are classified; a coverage test fails the build if a new provider lands without a cadence.
+- **Quota Tracker shows parked providers**: providers without a usage API (Cline, ClinePass, OpenAI-compatible nodes…) used to render an empty card even while the router had parked them. `/api/usage/[connectionId]` now attaches router-side rows (`Quota (daily)`, `Quota (account)`, per-model cooldowns, `Rate limited`) when the provider reports none. Provider-reported data always wins.
+
+## Fixes
+- **Cline model catalog**: the picker listed **466** models because the live reader fetched `GET /api/v1/models` — Cline's entire OpenRouter-style proxy catalog (~446 rows, paid, `~`-prefixed aliases). It now reads the account's tiered catalog (`/api/v1/ai/cline/recommended-models`) and takes the `free[]` group, so Cline shows its **5** usable free models. `resolveClinepassModels` was broken the same way (it filtered that catalog for a `cline-pass/` prefix that never appears there, always returning empty) and now returns the `clinePass[]` group (15 models).
+- **Cline catalog timeout**: the model-list fetch budget of 5 s aborted the first (cold-start, ~5.7 s) request and silently returned null, dropping the free tier from the picker. Raised to 15 s (warm calls are <500 ms).
+- **Grok CLI quota window** was classified monthly; its billing period is `USAGE_PERIOD_TYPE_WEEKLY`, so the account was parked ~5 weeks instead of one.
+
+## Internal
+- DB path, `machineId`, salts and FreeBuff trust are unchanged — upgrading requires no re-login or data migration.
+
 # v0.5.75.7 (2026-09-15)
 
 ## Features
