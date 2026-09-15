@@ -288,10 +288,12 @@ const PROVIDER_MODELS_CONFIG = {
     },
   },
 
-  // Cline/ClinePass share api.cline.bot/api/v1/models. The service layer already
-  // handles Bearer-vs-`workos:` auth and swallows failures into null, so these follow
-  // the cursor direct pattern (no refreshFn) and only differ in filtering:
-  // cline returns the whole catalog verbatim, clinepass keeps cline-pass/* only.
+  // Cline/ClinePass read the account's tiered catalog
+  // (api.cline.bot/api/v1/ai/cline/recommended-models), NOT the ~446-row proxy
+  // catalog at /api/v1/models. The service layer handles Bearer-vs-`workos:` auth
+  // and swallows failures into null, so these follow the cursor direct pattern
+  // (no refreshFn) and only differ in which group they take: cline → free[],
+  // clinepass → clinePass[].
   cline: {
     customResolver: async (connection) => {
       const result = await resolveClineModels({
