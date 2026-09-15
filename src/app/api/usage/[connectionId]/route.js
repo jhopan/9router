@@ -6,6 +6,26 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { buildRouterQuotaState, hasQuotaRows } from "open-sse/services/routerQuotaState.js";
+
+/**
+ * Attach router-side quota rows when the provider itself reports none.
+ *
+ * Providers without a usage API (Cline, ClinePass, OpenAI-compatible nodes…)
+ * answered "not implemented" and the dashboard showed an empty card — even when
+ * the router had parked the account on a quota reset. Provider-reported rows
+ * always win; synthetic rows only fill the gap. Never throws.
+ */
+function withRouterQuotaState(usage, connection) {
+  try {
+    if (hasQuotaRows(usage)) return usage;
+    const synthetic = buildRouterQuotaState(connection);
+    if (!synthetic) return usage;
+    return { ...usage, ...synthetic };
+  } catch {
+    return usage;
+  }
+}
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -142,7 +162,9 @@ export async function GET(request, { params }) {
       isApikeyAuth && USAGE_APIKEY_PROVIDERS.includes(connection.provider);
 
     if (!isOAuth && !isApikeyEligible) {
-      return Response.json({ message: "Usage not available for this connection" });
+      return Response.json(
+        withRouterQuotaState({ message: "Usage not available for this connection" }, connection),
+      );
     }
 
     // Resolve connection proxy config; force strictProxy=false so quota/refresh fall back to direct on failure
@@ -183,7 +205,7 @@ export async function GET(request, { params }) {
       }
     }
 
-    return Response.json(usage);
+    return Response.json(withRouterQuotaState(usage, connection));
   } catch (error) {
     const provider = connection?.provider ?? "unknown";
     console.warn(`[Usage] ${provider}: ${error.message}`);
