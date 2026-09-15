@@ -17,10 +17,13 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
+import ApiKeyPlanModal from "./ApiKeyPlanModal";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showPlanModal, setShowPlanModal] = useState(false);
+  const [planTarget, setPlanTarget] = useState(undefined); // undefined=closed, null=create, object=edit
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
@@ -644,6 +647,33 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  // Plan editor (prepaid pool). `planTarget === null` = create, object = edit.
+  const handlePlanSaved = async (data) => {
+    setShowPlanModal(false);
+    if (!planTarget) {
+      setCreatedKey(data.key);
+    }
+    setPlanTarget(undefined);
+    await fetchData();
+  };
+
+  const handleAdjust = async (key, delta) => {
+    const prev = key.limits || {};
+    try {
+      const res = await fetch(`/api/keys/${key.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limits: { totalTokens: (prev.totalTokens || 0) + delta } }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setKeys((prevKeys) => prevKeys.map((k) => (k.id === key.id ? data.key : k)));
+      }
+    } catch (error) {
+      console.log("Error topping up key:", error);
+    }
+  };
+
   const handleDeleteKey = async (id) => {
     setConfirmState({
       title: "Delete API Key",
@@ -970,7 +1000,7 @@ export default function APIPageClient({ machineId }) {
             <span className="material-symbols-outlined text-primary">vpn_key</span>
             API Keys
           </h2>
-          <Button icon="add" onClick={() => setShowAddModal(true)}>
+          <Button icon="add" onClick={() => { setPlanTarget(null); setShowPlanModal(true); }}>
             Create Key
           </Button>
         </div>
@@ -1001,7 +1031,7 @@ export default function APIPageClient({ machineId }) {
             </div>
             <p className="text-text-main font-medium mb-1">No API keys yet</p>
             <p className="text-sm text-text-muted mb-4">Create your first API key to get started</p>
-            <Button icon="add" onClick={() => setShowAddModal(true)}>
+            <Button icon="add" onClick={() => { setPlanTarget(null); setShowPlanModal(true); }}>
               Create Key
             </Button>
           </div>
@@ -1042,8 +1072,67 @@ export default function APIPageClient({ machineId }) {
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
+                  {key.limits && (
+                    <div className="mt-2 max-w-md">
+                      {(() => {
+                        const used = key.limits.usedTokens || 0;
+                        const total = key.limits.totalTokens || 0;
+                        const pct = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+                        const expired = key.limits.expiresAt && new Date(key.limits.expiresAt).getTime() <= Date.now();
+                        // Date-only values are calendar dates, not instants — render
+                        // them verbatim so a UTC-midnight parse can't shift the day.
+                        const expLabel = /^\d{4}-\d{2}-\d{2}$/.test(String(key.limits.expiresAt || ""))
+                          ? key.limits.expiresAt
+                          : new Date(key.limits.expiresAt).toLocaleDateString();
+                        return (
+                          <>
+                            <div className="flex items-center justify-between text-xs text-text-muted mb-1 gap-2">
+                              <span>
+                                Pool {used.toLocaleString()} / {total.toLocaleString()}
+                                {key.limits.models?.length ? ` · ${key.limits.models.length} model(s)` : " · all models"}
+                              </span>
+                              <span className={pct >= 90 || expired ? "text-red-500 font-medium" : ""}>
+                                {expired ? "expired" : `${pct}%`}
+                              </span>
+                            </div>
+                            <div className="w-full h-1.5 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${pct >= 90 || expired ? "bg-red-500" : "bg-primary"}`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            {key.limits.expiresAt && !expired && (
+                              <p className="text-xs text-text-muted mt-1">
+                                Expires {expLabel}
+                              </p>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      setPlanTarget(key);
+                      setShowPlanModal(true);
+                    }}
+                  >
+                    {key.limits ? "Plan" : "Set plan"}
+                  </Button>
+                  {key.limits && (
+                    <>
+                      <Button size="sm" variant="secondary" onClick={() => handleAdjust(key, 1000000)}>
+                        +1M
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => handleAdjust(key, 5000000)}>
+                        +5M
+                      </Button>
+                    </>
+                  )}
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1075,6 +1164,18 @@ export default function APIPageClient({ machineId }) {
           </div>
         )}
       </Card>
+
+      {/* Plan Modal (create + edit prepaid pool) */}
+      <ApiKeyPlanModal
+        key={planTarget?.id || (planTarget === null ? "new" : "closed")}
+        isOpen={showPlanModal}
+        initial={planTarget || null}
+        onClose={() => {
+          setShowPlanModal(false);
+          setPlanTarget(undefined);
+        }}
+        onSaved={handlePlanSaved}
+      />
 
       {/* Add Key Modal */}
       <Modal
