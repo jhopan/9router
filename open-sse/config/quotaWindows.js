@@ -29,14 +29,37 @@ export const QUOTA_WINDOWS = {
    *   maxCooldownMs— per-provider ceiling (defaults to defaultMaxCooldownMs).
    */
   providers: {
-    // Reports an exact date via `nextDateReset` in its usage API.
+    // ── Providers that report an exact reset timestamp ─────────────────────
+    // Kiro reports a date via `nextDateReset` in its usage API.
     kiro: { scope: QUOTA_SCOPES.MONTHLY, usageKey: null },
     // Weekly buckets from retrieveUserQuotaSummary (resetTime per bucket).
     antigravity: { scope: QUOTA_SCOPES.WEEKLY, usageKey: "gemini_weekly" },
     // 5h primary window + weekly secondary; `session` is the short one.
     codex: { scope: QUOTA_SCOPES.SESSION, usageKey: "session" },
     claude: { scope: QUOTA_SCOPES.SESSION, usageKey: "session (5h)" },
-    // No usage API for the free tier — calendar only.
+    // Dynamic windows: "Session (Nh)" and "Weekly (7d)".
+    glm: { scope: QUOTA_SCOPES.SESSION, usageKey: "session" },
+    "glm-cn": { scope: QUOTA_SCOPES.SESSION, usageKey: "session" },
+    // "Weekly SuperGrok" + "On-demand"/"Monthly included"; the documented free
+    // refusal is the on-demand spend limit, whose period end is the reset.
+    "grok-cli": { scope: QUOTA_SCOPES.MONTHLY, usageKey: "On-demand" },
+    // "Weekly" bucket + a short "Ratelimit" window.
+    kimi: { scope: QUOTA_SCOPES.WEEKLY, usageKey: "Weekly" },
+    // Refill packs labelled Daily/Weekly/Monthly by cycle length + Bonus Pack N.
+    // CycleEndTime is usually a monthly subscription cycle.
+    "codebuddy-cn": { scope: QUOTA_SCOPES.MONTHLY, usageKey: null },
+    "codebuddy-intl": { scope: QUOTA_SCOPES.MONTHLY, usageKey: null },
+    // Monthly premium-request quotas (no per-quota resetAt — calendar only).
+    github: { scope: QUOTA_SCOPES.MONTHLY, usageKey: null },
+    // Billing-cycle reset (subscription_period.ended_at).
+    zed: { scope: QUOTA_SCOPES.MONTHLY, usageKey: null },
+    // Weekly + monthly pools.
+    "opencode-go": { scope: QUOTA_SCOPES.WEEKLY, usageKey: null },
+    // Weekly quota (needs a Xiaomi session; API key alone can't read resetAt).
+    "xiaomi-mimo": { scope: QUOTA_SCOPES.WEEKLY, usageKey: null },
+    // Daily free-tier request caps.
+    groq: { scope: QUOTA_SCOPES.DAILY, usageKey: null },
+    // ── Calendar-only providers ────────────────────────────────────────────
     cline: { scope: QUOTA_SCOPES.DAILY, resetUtcHour: 0 },
     freebuff: { scope: QUOTA_SCOPES.DAILY, resetUtcHour: 7 }, // Pacific midnight
     default: { scope: QUOTA_SCOPES.DAILY, resetUtcHour: 0 },
