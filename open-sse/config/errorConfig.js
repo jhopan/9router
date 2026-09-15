@@ -41,6 +41,42 @@ export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 // Hard cap for provider-reported rate limit cooldown (e.g. codex resets_at can be 5-6h)
 export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 
+// ── Daily free-tier quota (e.g. Cline "Daily free limit reached") ───────────
+// These are NOT transient rate limits: the account is refused for the rest of
+// the provider's quota day. Classifying them as 429-backoff made the router
+// re-select the same dead account every couple of minutes, which is both slow
+// and (for free tiers) a suspicious retry pattern. Instead we park the account
+// for that model until the provider's daily reset and let it recover by itself
+// — no manual re-enable needed, no request storm.
+export const DAILY_QUOTA = {
+  // Hour (UTC) the quota day rolls over. Keyed by provider id; `default` is
+  // used when the provider isn't listed.
+  resetUtcHour: {
+    default: 0,          // 00:00 UTC = 07:00 WIB
+    freebuff: 7,         // Pacific midnight = 07:00 WIB
+  },
+  // Safety ceiling so a clock/misclassification bug can never park an account
+  // for more than a day.
+  maxCooldownMs: 25 * 60 * 60 * 1000,
+};
+
+/**
+ * Milliseconds until the next daily quota reset for a provider.
+ * @param {string|null} provider
+ * @param {number} now
+ * @returns {number}
+ */
+export function dailyQuotaCooldownMs(provider = null, now = Date.now()) {
+  const key = String(provider || "").toLowerCase();
+  const map = DAILY_QUOTA.resetUtcHour;
+  const hour = Number.isFinite(map[key]) ? map[key] : map.default;
+  const next = new Date(now);
+  next.setUTCHours(hour, 0, 0, 0);
+  if (next.getTime() <= now) next.setUTCDate(next.getUTCDate() + 1);
+  return Math.min(next.getTime() - now, DAILY_QUOTA.maxCooldownMs);
+}
+
+
 // FreeBuff waiting room (428): the admission queue after a session expires.
 // The executor waits in-request (honoring upstream Retry-After) up to the
 // budget, then surfaces a 503 with the real wait.
@@ -70,6 +106,15 @@ export const ERROR_RULES = [
   // infra-level transient, not an account/permission problem. Short cooldown so
   // the retry succeeds once the origin is awake.
   { text: "<!doctype html", cooldownMs: COOLDOWN.short },
+  // ── Daily free-tier quota (must precede the generic rate-limit rules) ──────
+  // "Daily free limit reached on model X" (Cline INFERENCE_CAP_ERROR) is a
+  // whole-quota-day refusal, not a burst rate limit: backoff retries every few
+  // minutes all fail. Park the model until the provider's daily reset instead.
+  { text: "daily free limit reached", dailyQuota: true },
+  { text: "inference_cap_error",      dailyQuota: true },
+  { text: "daily limit",              dailyQuota: true },
+  { text: "daily quota",              dailyQuota: true },
+  { text: "quota will reset",         dailyQuota: true },
   // Cline OAuth 401 "re-authenticate your Cline account" — refreshable token
   // (OmniRoute #12594 parity): chatCore already attempts a token refresh on 401;
   // the follow-up retry should come fast, not after a 2-minute cooldown.

@@ -278,19 +278,31 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
       : Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
     newBackoffLevel = 0;
   } else {
-    ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
+    ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel, provider));
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
 
+  // Daily free-tier quota: mark the connection so the dashboard shows why it is
+  // parked (and when it comes back) instead of a generic cooldown. The
+  // connection stays ACTIVE — the model lock expires on its own at reset time.
+  const quotaExhausted = (() => {
+    const lower = String(errorText || "").toLowerCase();
+    return lower.includes("daily free limit reached")
+      || lower.includes("inference_cap_error")
+      || lower.includes("daily limit")
+      || lower.includes("daily quota");
+  })();
+
   await updateProviderConnection(connectionId, {
     ...lockUpdate,
     testStatus: "unavailable",
-    lastError: reason,
+    lastError: quotaExhausted ? `Daily quota exhausted — resets in ${Math.round(cooldownMs / 3600000)}h` : reason,
     errorCode: status,
     lastErrorAt: new Date().toISOString(),
+    ...(quotaExhausted && { quotaExhaustedUntil: new Date(Date.now() + cooldownMs).toISOString() }),
     backoffLevel: newBackoffLevel ?? backoffLevel
   });
 
@@ -348,6 +360,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
       lastError: null,
       errorCode: null,
       lastErrorAt: null,
+      quotaExhaustedUntil: null,
       backoffLevel: 0
     });
   }
