@@ -66,6 +66,10 @@ const COOLDOWN = {
  */
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
+  // HTML error page (e.g. Render cold-start 403 HTML, Cloudflare challenge) —
+  // infra-level transient, not an account/permission problem. Short cooldown so
+  // the retry succeeds once the origin is awake.
+  { text: "<!doctype html", cooldownMs: COOLDOWN.short },
   // Cline OAuth 401 "re-authenticate your Cline account" — refreshable token
   // (OmniRoute #12594 parity): chatCore already attempts a token refresh on 401;
   // the follow-up retry should come fast, not after a 2-minute cooldown.
