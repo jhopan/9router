@@ -57,6 +57,10 @@ npx vitest run unit/capabilities.test.js   # single file, path relative to tests
 - Before a risky change: make sure working tree is clean so a broken edit can be rolled back with `git checkout .`.
 - Never push to upstream `decolua/9router` (read-only reference); push to the fork `jhopan/9router`.
 
+### Remote servers (mandatory)
+
+- **NEVER modify anything on remote servers (VPS neva, Render dashboard config, etc.) — local edits only.** No crontab changes, no config edits, no file writes, no service restarts on remotes unless the user explicitly asks for THAT exact change first. Investigation/read-only SSH is fine; mutation is not.
+
 ### AgentRouter (provider + translate layer)
 
 - Provider: `agentrouter` — Anthropic-compatible relay, baseUrl `https://agentrouter.org/v1/messages`, auth `x-api-key`, aliases `AR`/`ar`. Model prefix `AR/<model>`.
