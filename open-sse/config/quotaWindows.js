@@ -40,9 +40,11 @@ export const QUOTA_WINDOWS = {
     // Dynamic windows: "Session (Nh)" and "Weekly (7d)".
     glm: { scope: QUOTA_SCOPES.SESSION, usageKey: "session" },
     "glm-cn": { scope: QUOTA_SCOPES.SESSION, usageKey: "session" },
-    // "Weekly SuperGrok" + "On-demand"/"Monthly included"; the documented free
-    // refusal is the on-demand spend limit, whose period end is the reset.
-    "grok-cli": { scope: QUOTA_SCOPES.MONTHLY, usageKey: "On-demand" },
+    // Grok CLI (registry alias `grok-build`/`gb` — one provider id). Every quota
+    // row it reports shares one reset: `currentPeriod.end`, typed
+    // USAGE_PERIOD_TYPE_WEEKLY. `usageKey: null` → earliest future reset across
+    // rows, which is that same weekly boundary on every tier.
+    "grok-cli": { scope: QUOTA_SCOPES.WEEKLY, usageKey: null },
     // "Weekly" bucket + a short "Ratelimit" window.
     kimi: { scope: QUOTA_SCOPES.WEEKLY, usageKey: "Weekly" },
     // Refill packs labelled Daily/Weekly/Monthly by cycle length + Bonus Pack N.

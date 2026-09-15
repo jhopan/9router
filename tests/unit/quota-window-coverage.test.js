@@ -40,9 +40,12 @@ describe("QUOTA_WINDOWS coverage", () => {
     expect(missing).toEqual([]);
   });
 
-  it("grok is not treated as a daily quota", () => {
-    expect(quotaWindowFor("grok-cli").scope).toBe(QUOTA_SCOPES.MONTHLY);
-    expect(quotaWindowFor("grok-cli").usageKey).toBe("On-demand");
+  it("grok-cli uses its weekly period, not a month", () => {
+    // All rows (On-demand / Monthly included / Weekly SuperGrok) share the same
+    // `currentPeriod.end`, typed USAGE_PERIOD_TYPE_WEEKLY. `grok-build` is a
+    // registry alias of the same provider id — no separate entry.
+    expect(quotaWindowFor("grok-cli").scope).toBe(QUOTA_SCOPES.WEEKLY);
+    expect(quotaWindowFor("grok-cli").usageKey).toBeNull();
   });
 
   it("codebuddy uses its subscription cycle, not a day", () => {
