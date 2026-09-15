@@ -52,16 +52,40 @@ jobs:
       - name: Generate release notes from commits
         id: notes
         run: |
-          PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -n "$PREV" ]; then
-            NOTES=$(printf '## Changes since %s\n\n' "$PREV" && git log --pretty=format:"- %s" "$PREV"..HEAD)
-          else
-            NOTES=$(printf '## Changes\n\n' && git log --pretty=format:"- %s" HEAD~20..HEAD)
+          VERSION="${GITHUB_REF_NAME#v}"
+          PREV=$(git describe --tags --abbrev=0 "HEAD^" 2>/dev/null | grep -E '^v[0-9]' || echo "")
+          if [ -z "$PREV" ]; then
+            # fall back: highest semver tag before HEAD
+            PREV=$(git tag --list 'v*' --sort=-v:refname | head -2 | tail -1)
           fi
-          # Save to file to avoid shell escaping issues
-          echo "$NOTES" > /tmp/release-notes.md
+          {
+            echo "# PanRouter v${VERSION}"
+            echo ""
+            echo "> **By Jhopanstore** — [PanRouter repo](https://github.com/jhopan/PanRouter) · [Issues](https://github.com/jhopan/PanRouter/issues)"
+            echo ""
+            echo "## 📋 Changes"
+            echo ""
+            if [ -n "$PREV" ]; then
+              git log --pretty=format:"- %s" "$PREV..HEAD"
+            else
+              git log --pretty=format:"- %s" HEAD~20..HEAD
+            fi
+            echo ""
+            echo ""
+            echo "## 📦 Install / Update"
+            echo ""
+            echo '```bash'
+            echo "npm i -g https://github.com/jhopan/PanRouter/releases/latest/download/panrouter-latest.tgz"
+            echo '```'
+            echo ""
+            echo "Command: \`panrouter\` — dashboard at \`http://localhost:20128\`"
+            echo ""
+            echo "## 🔒 Internal (unchanged)"
+            echo ""
+            echo "DB path, machineId salts, FreeBuff trust — preserved across this release."
+          } > /tmp/release-notes.md
           echo "Notes generated:"
-          cat /tmp/release-notes.md | head -10
+          cat /tmp/release-notes.md | head -14
 
       - name: Create versioned release (v${{ steps.ver.outputs.VERSION }})
         env:
