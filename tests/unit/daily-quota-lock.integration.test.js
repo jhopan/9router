@@ -43,7 +43,7 @@ describe("markAccountUnavailable — daily free-tier quota", () => {
       const lockKey = Object.keys(after).find((k) => k === "modelLock_z-ai/glm-5.3-flash");
       const until = new Date(after[lockKey]).getTime();
       expect(until - Date.now()).toBeGreaterThan(60 * 60 * 1000); // hours, not minutes
-      expect(after.lastError).toMatch(/Daily quota exhausted/);
+      expect(after.lastError).toMatch(/Quota exhausted/);
     } finally {
       await deleteProviderConnection(conn.id);
     }

@@ -2,6 +2,7 @@ import { getProviderConnections, validateApiKey, updateProviderConnection, getSe
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { isQuotaExhaustedError, resolveQuotaResetAt } from "open-sse/services/quotaWindow.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
@@ -282,24 +283,30 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
+  // Free-tier quota refusal (daily/weekly/monthly/session). These are not burst
+  // rate limits: park the account for the provider's real reset window and let
+  // it recover on its own — see open-sse/services/quotaWindow.js.
+  const quotaExhausted = isQuotaExhaustedError(errorText);
+  let quotaResetSource = null;
+  if (quotaExhausted && !resetsAtMs) {
+    const resolved = await resolveQuotaResetAt({
+      provider,
+      connection: conn,
+      now: Date.now(),
+    });
+    cooldownMs = resolved.cooldownMs;
+    quotaResetSource = resolved.source;
+  }
+
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
-
-  // Daily free-tier quota: mark the connection so the dashboard shows why it is
-  // parked (and when it comes back) instead of a generic cooldown. The
-  // connection stays ACTIVE — the model lock expires on its own at reset time.
-  const quotaExhausted = (() => {
-    const lower = String(errorText || "").toLowerCase();
-    return lower.includes("daily free limit reached")
-      || lower.includes("inference_cap_error")
-      || lower.includes("daily limit")
-      || lower.includes("daily quota");
-  })();
 
   await updateProviderConnection(connectionId, {
     ...lockUpdate,
     testStatus: "unavailable",
-    lastError: quotaExhausted ? `Daily quota exhausted — resets in ${Math.round(cooldownMs / 3600000)}h` : reason,
+    lastError: quotaExhausted
+      ? `Quota exhausted — resets ${new Date(Date.now() + cooldownMs).toISOString()}`
+      : reason,
     errorCode: status,
     lastErrorAt: new Date().toISOString(),
     ...(quotaExhausted && { quotaExhaustedUntil: new Date(Date.now() + cooldownMs).toISOString() }),

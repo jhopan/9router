@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
-import { dailyQuotaCooldownMs, DAILY_QUOTA } from "../../open-sse/config/errorConfig.js";
+import { dailyQuotaCooldownMs, MAX_DAILY_QUOTA_COOLDOWN_MS } from "../../open-sse/config/errorConfig.js";
+import { quotaWindowFor } from "../../open-sse/config/quotaWindows.js";
 
 // Real Cline body that motivated this: the router used to treat it as a burst
 // rate limit (429 backoff: 2s, 4s, 8s…) and re-selected the same dead account
@@ -31,7 +32,8 @@ describe("daily free-tier quota classification", () => {
   });
 
   it("never parks for longer than the safety ceiling", () => {
-    expect(dailyQuotaCooldownMs("cline")).toBeLessThanOrEqual(DAILY_QUOTA.maxCooldownMs);
+    expect(dailyQuotaCooldownMs("cline")).toBeLessThanOrEqual(MAX_DAILY_QUOTA_COOLDOWN_MS);
+    expect(dailyQuotaCooldownMs("cline")).toBeLessThanOrEqual(quotaWindowFor("cline").maxCooldownMs);
   });
 
   it("generic rate limits still use backoff", () => {
