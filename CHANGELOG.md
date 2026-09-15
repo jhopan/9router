@@ -1,3 +1,22 @@
+# v0.5.75.7 (2026-09-15)
+
+## Features
+- **Per-key prepaid token pool**: API keys can now carry a quota plan — model allowlist, total token pool, optional expiry. Limits live in the new `apiKeys.limits` column (`SCHEMA_VERSION` 1 → 2, additive auto-sync; no data migration needed).
+  - Pre-dispatch gates (fail-closed): model not in allowlist → `403 model_not_allowed`; pool exhausted → `429 quota_exhausted`; expired → `401 key_expired`.
+  - Post-response billing is atomic and **cache-free**: only `(prompt_tokens − cached_tokens) + completion_tokens` is deducted, so cached prompt tokens cost the customer nothing. Works for both streaming and non-streaming paths; billing is fail-open so it can never break a response.
+  - Keys without a `limits` blob keep working as unlimited (legacy behaviour).
+- **Dashboard plan editor** (Endpoint → API Keys): `Create Key` / `Set plan` opens a pool editor with model search + checklist, token total (with `+1M` / `+5M` / `+25M` / reset quick buttons) and an expiry date. Each key row shows a usage bar (`Pool used / total · N model(s)`), turns red at ≥90% or when expired, and provides one-click `+1M` / `+5M` top-ups.
+  - Top-up only raises `totalTokens`; `usedTokens` is preserved, so remaining quota grows exactly by the top-up amount.
+  - The model picker merges the static/aliased catalog with custom models and remaps compatible-node ids to their provider prefix (e.g. `frp/…`) — compatible providers were previously invisible in the picker.
+- **API**: `POST /api/keys` accepts an optional `limits` object; `PUT /api/keys/[id]` patches `name` and merges partial `limits` edits (`null` clears the plan → unlimited).
+
+## Fixes
+- **Error classification**: HTML error pages (Render free-tier cold start, Cloudflare interstitials) are now classified as a short-cooldown transient instead of a 2-minute account lock — the retry succeeds as soon as the origin is awake.
+- **Dashboard**: `CompatibleModelsSection` crashed with `ReferenceError: connections is not defined` — the prop is now destructured (and defaults to `[]`).
+
+## Internal
+- DB path, `machineId`, salts and FreeBuff trust are unchanged — upgrading requires no re-login or data migration.
+
 # v0.5.75 (2026-09-10)
 
 ## Features
