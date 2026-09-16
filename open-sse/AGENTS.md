@@ -2,6 +2,22 @@
 
 Provider-agnostic SSE engine: one OpenAI-style request → any provider (LLM chat, image, embedding, tts, stt, search), streamed back in the client's format.
 
+> Part of **PanRouter** — see the root `AGENTS.md` → *Project identity*. PanRouter is the primary project; upstream `decolua/9router` is read-only reference material, and our version does not track theirs. This is the engine half.
+
+**`open-sse/` is NOT actually decoupled from `src/`** — ~14 files reach in, so plan for it when you touch or copy them:
+
+| Coupling | Files |
+|---|---|
+| Usage DB (`@/lib/usageDb.js`) — track, log, request-detail | all of `handlers/chatCore*`, `utils/stream.js` |
+| SSRF guard (`src/shared/utils/ssrfGuard.js`) | `handlers/search/index.js`, `handlers/search/callers.js` |
+| Settings / API-key repos (`@/lib/db/repos/*`) | `translator/concerns/translateConfig.js` |
+| `DATA_DIR` (`@/lib/dataDir.js`) | `providers/catalogOverride.js` |
+| Combo lookup (`@/lib/localDb`) | `services/capacityAdapter.js` |
+| KV store (`src/lib/db/helpers/kvStore.js`) | `services/thoughtSignatureStore.js` |
+| Kiro external-IdP refresh (`src/lib/oauth/kiroExternalIdp.js`) | `services/tokenRefresh/providers.js` |
+
+So the "engine is standalone" line is aspirational, not true today. Don't ADD coupling on the request hot path; and if you do add a new one, record it in this table.
+
 ## Request lifecycle (chat)
 
 `handlers/chatCore.js` → `services/model.js` `parseModel` (resolve `provider/model`) → **pre-translate hooks** (`rtk/` tool_result compress, `rtk/headroom.js` proxy compress, `rtk/caveman.js` system inject — all fail-open) → `executors/index.js` `getExecutor(provider)` → `translator/index.js` `translateRequest` (client format → provider format) → `executor.execute()` (streams upstream) → `translateResponse` (provider chunks → client format) → SSE out.

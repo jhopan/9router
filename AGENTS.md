@@ -62,7 +62,7 @@ src/app/api/v1/*            (next.config.mjs rewrites /v1/* → /api/v1/*)
         → SSE back to client
 ```
 
-`src/sse/` is the app-side entry glue; `open-sse/` is the provider-agnostic engine (also usable standalone). Cross that boundary consciously.
+`src/sse/` is the app-side entry glue; `open-sse/` is the provider-agnostic engine (usable standalone in principle — but see `open-sse/AGENTS.md`, it is not actually decoupled: ~14 files reach back into `src/`). Cross that boundary consciously.
 
 ## Translators, registry, persistence
 

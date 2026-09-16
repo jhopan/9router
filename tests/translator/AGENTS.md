@@ -35,13 +35,17 @@ Components:
 Always pass `--config tests/vitest.config.js` (the alias config lives there; without it vitest may not resolve `@/...` subpaths).
 
 ```bash
+# Run from the REPO ROOT (the --config path is relative to it).
+# There is no app/ directory in this repo — do not prefix with `cd app`.
 # no-cred (default, offline): translator-only files
-cd app && npx vitest run --config tests/vitest.config.js "tests/translator/"
-cd app && npx vitest run --config tests/vitest.config.js "tests/translator/bugs-openai-bridge.test.js"
+npx vitest run --config tests/vitest.config.js "tests/translator/"
+npx vitest run --config tests/vitest.config.js "tests/translator/bugs-openai-bridge.test.js"
 
 # real (calls live providers using credentials from the local DB)
-cd app && RUN_REAL=1 npx vitest run --config tests/vitest.config.js "tests/translator/real/"
+RUN_REAL=1 npx vitest run --config tests/vitest.config.js "tests/translator/real/"
 ```
+
+Equivalently, from `tests/` the config is auto-discovered, so `cd tests && npx vitest run translator/…` works too.
 No-cred tests make NO network calls and need NO creds. Real tests (`real/`, gated by `RUN_REAL=1`) read active connections from `~/.9router/db/data.sqlite`, send a tiny prompt per provider through `handleChatCore`, and assert valid SSE. Account/quota errors (401/402/403/429) are treated as credential issues and skipped, not failures.
 
 ## 4. Adding a new provider → tests cover it AUTOMATICALLY
@@ -72,15 +76,26 @@ Only add a dedicated test when a provider has a special format that does not rou
 
 ## 8. Current known bugs (currently `it.fails`)
 
-Grouped per CLI/provider test file. Each row is an `it.fails` case.
+Grouped per CLI/provider test file. Each row below is an `it.fails` case — **18 of them
+as of 2026-09-16**. Re-verify before trusting this table:
 
-**Claude (`bugs-openai-bridge.test.js`, `bugs-claudeCode-context.test.js`)**
+```bash
+# count it.fails per bugs-*.test.js and print the titles
+grep -c 'it\.fails(' tests/translator/bugs-*.test.js
+```
+
+A row that has been fixed no longer belongs here — per §6 its `it.fails` is flipped to a
+plain `it`, which turns the test RED until someone does that. Fixed bugs are listed at the
+bottom of this section.
+
+**Claude → OpenAI (`bugs-openai-bridge.test.js` 3 + `bugs-claudeCode-context.test.js` 2 = 5 cases)**
 | Bug | Source |
 |---|---|
 | Claude image `source.type="url"` dropped (only base64) | `request/claude-to-openai.js:133-141` |
 | `tool_result` image block → raw JSON | `request/claude-to-openai.js:155-173` |
 | `tool_result.is_error` lost | `request/claude-to-openai.js:155-173` |
-| `thinking`/`redacted_thinking` dropped via bridge | `request/claude-to-openai.js:128` |
+| `tool_result` image block dropped (second site, Claude Code path) | `request/claude-to-openai.js:155-173` |
+| `thinking` / `redacted_thinking` dropped via bridge | `request/claude-to-openai.js:128` |
 
 **OpenAI → Claude (`bugs-toClaude-context.test.js`)**
 | Bug | Source |
@@ -90,27 +105,25 @@ Grouped per CLI/provider test file. Each row is an `it.fails` case.
 | `tool_choice:"none"` → `auto` | `request/openai-to-claude.js:298` |
 | `input_audio` dropped | `request/openai-to-claude.js` (no audio branch) |
 
-**Codex Responses (`bugs-codexCli-responses.test.js`)**
+**Codex Responses (`bugs-codexCli-responses.test.js`, 2 cases)**
 | Bug | Source |
 |---|---|
 | Empty-name function_call can leave `tool_calls: []` | `request/openai-responses.js:103` |
-| `arguments` not coerced to string | `request/openai-responses.js:109-110` |
 | `input_image` uses `file_id` as raw url | `request/openai-responses.js:75-77` |
 
-**Antigravity (`bugs-antigravity.test.js`)**
-| Bug | Source |
-|---|---|
-| functionResponse + functionCall in same content → tool calls dropped | `request/antigravity-to-openai.js:177-189` |
-| functionCall without id → random unstable id | `request/antigravity-to-openai.js:167` |
+**Antigravity (`bugs-antigravity.test.js`) — none left**
 
-**Kiro (`bugs-kiro.test.js`)**
+Both bugs this file was written to expose are fixed, so its cases are plain `it` now
+(see "Fixed bugs" below). The file still carries regression guards, and two of them
+check that the **legacy Antigravity default system prompt is no longer injected**.
+
+**Kiro (`bugs-kiro.test.js`, 2 cases)**
 | Bug | Source |
 |---|---|
-| `JSON.parse(arguments)` throws on bad JSON (no try/catch) | `request/openai-to-kiro.js:214-216` |
 | `max_tokens` hardcoded to 32000 | `request/openai-to-kiro.js:309` |
 | Remote image → `[Image: url]` text | `request/openai-to-kiro.js:132-134` |
 
-**Gemini / Cursor / CommandCode (`bugs-gemini-cursor-commandcode.test.js`)**
+**Gemini / Cursor / CommandCode (`bugs-gemini-cursor-commandcode.test.js`, 5 cases)**
 | Bug | Source |
 |---|---|
 | Only the last system message kept | `request/openai-to-gemini.js:92-96` |
@@ -120,3 +133,15 @@ Grouped per CLI/provider test file. Each row is an `it.fails` case.
 | CommandCode image → `[image omitted]` | `request/openai-to-commandcode.js:41-42` |
 
 Fixing a bug → rerun; the matching `it.fails` test turns RED → switch it to a regular `it` and verify correct behavior.
+
+### Fixed bugs — no longer `it.fails`
+
+Their tests were flipped to plain `it` per §6 and now assert the correct behavior, so they
+serve as regression guards rather than bug exposure:
+
+| Bug | Fixed in | Test |
+|---|---|---|
+| Antigravity: functionResponse + functionCall in same content dropped tool calls | #2225 | `bugs-antigravity.test.js` |
+| Antigravity: functionCall without id got a random unstable id | #2225 | `bugs-antigravity.test.js` |
+| Kiro: `JSON.parse(arguments)` threw on malformed tool-call JSON | PR #1582 | `bugs-kiro.test.js` |
+| Codex: function_call `arguments` not coerced to a string | — | `bugs-codexCli-responses.test.js` |
