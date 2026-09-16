@@ -1,3 +1,14 @@
+# v0.5.75.9 (2026-09-16)
+
+## Fixes
+- **Quota resets were capped at 30 minutes**: when a provider returned its own reset timestamp for a free-tier refusal, `markAccountUnavailable` truncated it to the generic rate-limit ceiling (`MAX_RATE_LIMIT_COOLDOWN_MS`, 30 min) for every provider except Antigravity. A weekly or monthly quota that was empty for days therefore got re-selected every half hour, burning requests against a dead quota and re-triggering the same refusal. Quota-class errors are now bounded by the provider's own quota ceiling (`quotaWindowFor(provider).maxCooldownMs`). Burst rate limits keep the short 30-minute path, and a provider-supplied reset that is genuinely near is still honoured (`Math.min`).
+- **Legacy DB migration aborted on every boot**: `importWithAssertion` compared the *absolute* row count of the target table against the number of rows it had just inserted. `seedDefaultCombos` writes its `image`/`translate` rows before the legacy import runs, so that pre-existing pair made every fresh migration look like a dropped-row mismatch — the migration threw `MigrationAborted`, was rolled back, and retried on the next start forever. The assertion now measures a **delta** (`after - before`), so silently-lost rows still fail the guard while seeded rows no longer do.
+
+## Internal
+- Test suite stabilised: failures drop from **126 to 48**, and `tests/__baseline__/verify-no-regression.mjs` now reports *"No regression"* instead of flagging everything (the gate could not run correctly on Windows before — it split test names on a `/app/` segment that does not exist here).
+- 43 of the remaining failures are the `cursor-agent-proto` codec, whose implementation (`encodeAgentValue` and the rest of the `agent.v1` AgentService codec) **does not exist here or upstream** — the test landed without it. Recorded in `tests/__baseline__/known-fails.txt` as expected-red rather than silently ignored.
+- Documentation consolidated into `AGENTS.md` (+ the two nested ones); the stale upstream `CLAUDE.md` was removed. Internal identifiers still say `9router` on purpose (install paths, DB names, salts) — no migration or re-login is required for this release.
+
 # v0.5.75.8 (2026-09-15)
 
 ## Features
