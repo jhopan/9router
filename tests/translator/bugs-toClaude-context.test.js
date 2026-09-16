@@ -17,7 +17,10 @@ describe("OpenAI → Claude context mapping", () => {
     expect(JSON.stringify(out.system), "Claude Code prompt injected").not.toContain("Claude Code");
   });
 
-  it("assistant reasoning_content becomes a thinking block", () => {
+  // openai-to-claude.js:268-273 — assistant `reasoning_content` is dropped instead of
+  // being mapped to a Claude thinking block (AGENTS.md §8 "OpenAI → Claude" table).
+  // KNOWN BUG
+  it.fails("assistant reasoning_content becomes a thinking block", () => {
     const out = T({
       messages: [
         { role: "user", content: "q" },

@@ -11,7 +11,13 @@ import { openaiToKiroRequest } from "../../open-sse/translator/request/openai-to
 
 const contentOf = (result) =>
   result.conversationState.currentMessage.userInputMessage.content;
-const systemPromptOf = (result) => result.systemPrompt || "";
+// The returned object is the KIRO PAYLOAD, not an intermediate: there is no
+// top-level `systemPrompt`. openai-to-kiro.js folds the system text (thinking
+// prefix + agentic protocol) into the content of the current user turn because
+// the CodeWhisperer surface rejects a top-level systemPrompt with 400
+// REQUEST_BODY_INVALID — see the comment above systemPromptParts. So "the system
+// prompt" now means "the system part of the user content".
+const systemPromptOf = (result) => contentOf(result) || "";
 
 describe("openaiToKiroRequest", () => {
   describe("basic message conversion", () => {
@@ -568,7 +574,7 @@ describe("openaiToKiroRequest", () => {
       expect(systemPromptOf(result)).toContain("<max_thinking_length>16000</max_thinking_length>");
     });
 
-    it("keeps top-level systemPrompt stable across turns", () => {
+    it("keeps the system prefix stable across turns while the timestamp stays fresh", () => {
       const first = openaiToKiroRequest(
         "claude-sonnet-4.6-thinking",
         { messages: [{ role: "user", content: "first" }] },
@@ -582,9 +588,15 @@ describe("openaiToKiroRequest", () => {
         {}
       );
 
-      expect(first.systemPrompt).toBe(second.systemPrompt);
-      expect(first.systemPrompt).not.toContain("Current time");
-      expect(first.conversationState.currentMessage.userInputMessage.content).toContain("Current time");
+      // System text and the "[Context: Current time …]" note share one string now
+      // (no top-level systemPrompt), so compare the part BEFORE the timestamp:
+      // the thinking prefix must be byte-identical across turns and must not carry
+      // the current time, which lives in the trailing context note.
+      const prefixOf = (result) => contentOf(result).split("[Context: Current time")[0].trim();
+      expect(prefixOf(first)).toBe(prefixOf(second));
+      expect(prefixOf(first)).toContain("<max_thinking_length>");
+      expect(prefixOf(first)).not.toContain("Current time");
+      expect(contentOf(first)).toContain("Current time");
     });
 
     it("replays frozen msg0 for explicit Kiro sessions while keeping current time fresh", () => {
