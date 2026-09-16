@@ -25,15 +25,23 @@ export class MigrationAborted extends Error {
 }
 
 // Insert rows one-by-one, collect failures, then assert COUNT(*) matches input length.
+// The count is measured as a DELTA: the table may already hold rows that this import
+// did not create (e.g. seedDefaultCombos writes `image`/`translate` combos before the
+// legacy import runs). Comparing against the absolute row count made that seed look
+// like a dropped-row mismatch, so every fresh boot aborted the migration and retried
+// forever. A delta keeps the guard meaningful — rows this import silently lost still
+// show up as a shortfall.
 function importWithAssertion(adapter, tableName, rows, insertFn, rowMeta) {
+  const before = adapter.get(`SELECT COUNT(*) as c FROM ${tableName}`)?.c ?? 0;
   const dropped = [];
   for (const row of rows) {
     try { insertFn(row); }
     catch (err) { dropped.push({ ...rowMeta(row), reason: err.message }); }
   }
-  const inserted = adapter.get(`SELECT COUNT(*) as c FROM ${tableName}`)?.c ?? 0;
+  const after = adapter.get(`SELECT COUNT(*) as c FROM ${tableName}`)?.c ?? 0;
+  const inserted = after - before;
   if (inserted !== rows.length) {
-    console.warn(`[DB][migrate] ${tableName} row-count mismatch: expected ${rows.length}, got ${inserted}. Dropped:`, dropped);
+    console.warn(`[DB][migrate] ${tableName} row-count mismatch: expected ${rows.length}, got ${inserted} (pre-existing rows: ${before}). Dropped:`, dropped);
     throw new MigrationAborted(`${tableName} row-count mismatch: expected ${rows.length}, got ${inserted}`, dropped);
   }
 }

@@ -3,6 +3,7 @@ import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/con
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { isQuotaExhaustedError, resolveQuotaResetAt } from "open-sse/services/quotaWindow.js";
+import { quotaWindowFor } from "open-sse/config/quotaWindows.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
@@ -265,6 +266,10 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   // GitHub premium-request exhaustion is account-wide until the next UTC month.
   const githubResetAtMs = githubMonthlyResetMs(status, errorText, provider);
 
+  // Free-tier quota refusal (daily/weekly/monthly/session)? Decided up front
+  // because it changes how a provider-supplied timestamp is bounded below.
+  const quotaExhausted = isQuotaExhaustedError(errorText);
+
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
   let shouldFallback, cooldownMs, newBackoffLevel;
   if (githubResetAtMs) {
@@ -273,20 +278,24 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     newBackoffLevel = 0;
   } else if (resetsAtMs && resetsAtMs > Date.now()) {
     shouldFallback = true;
-    // Antigravity quota API provides exact per-model resetAt. Do not truncate it.
-    cooldownMs = resolveProviderId(provider) === "antigravity"
-      ? resetsAtMs - Date.now()
-      : Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
+    // Burst rate limits are capped at MAX_RATE_LIMIT_COOLDOWN_MS, but a QUOTA
+    // reset must not be: truncating a weekly/monthly reset to 30 minutes made the
+    // router re-select an account that was empty for days. Quota-class errors are
+    // bounded by the provider's own quota ceiling instead (antigravity keeps its
+    // exact per-model resetAt for the same reason).
+    const isQuotaClass = quotaExhausted || resolveProviderId(provider) === "antigravity";
+    const ceiling = isQuotaClass
+      ? quotaWindowFor(provider).maxCooldownMs
+      : MAX_RATE_LIMIT_COOLDOWN_MS;
+    cooldownMs = Math.min(resetsAtMs - Date.now(), ceiling);
     newBackoffLevel = 0;
   } else {
     ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel, provider));
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
-  // Free-tier quota refusal (daily/weekly/monthly/session). These are not burst
-  // rate limits: park the account for the provider's real reset window and let
-  // it recover on its own — see open-sse/services/quotaWindow.js.
-  const quotaExhausted = isQuotaExhaustedError(errorText);
+  // No provider-supplied reset: resolve the window ourselves (usage API first,
+  // calendar fallback) — see open-sse/services/quotaWindow.js.
   let quotaResetSource = null;
   if (quotaExhausted && !resetsAtMs) {
     const resolved = await resolveQuotaResetAt({

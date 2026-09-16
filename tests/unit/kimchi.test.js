@@ -1,5 +1,6 @@
-import { describe, it, before } from "node:test";
-import assert from "node:assert/strict";
+// Converted from node:test to vitest: vitest is the project runner and supplies
+// the `@/…` aliases, while `node --test` cannot resolve them.
+import { describe, it, beforeAll, expect } from "vitest";
 
 // Load the registry entry once for the suite so a load failure is reported
 // next to the failing test instead of cascading as "undefined" in every
@@ -7,28 +8,25 @@ import assert from "node:assert/strict";
 let kimchiEntry;
 
 describe("kimchi registry entry", () => {
-  before(async () => {
+  beforeAll(async () => {
     kimchiEntry = (await import("../../open-sse/providers/registry/kimchi.js")).default;
   });
 
-  it("is an oauth provider auto-listed via byCategory", () => {
-    assert.equal(kimchiEntry.id, "kimchi");
-    assert.equal(kimchiEntry.category, "oauth");
+  it("is a free-tier provider auto-listed via byCategory", () => {
+    expect(kimchiEntry.id).toBe("kimchi");
+    expect(kimchiEntry.category).toBe("freeTier");
   });
 
   it("points at the OpenAI-compatible gateway with an authenticated UA", () => {
-    assert.equal(
-      kimchiEntry.transport.baseUrl,
-      "https://llm.kimchi.dev/openai/v1/chat/completions",
-    );
+    expect(kimchiEntry.transport.baseUrl).toBe("https://llm.kimchi.dev/openai/v1/chat/completions",);
     // UA must be a non-empty string the gateway can identify; the value
     // itself is owned by the Kimchi CLI release and may change upstream.
     const ua = kimchiEntry.transport.headers["User-Agent"];
-    assert.ok(typeof ua === "string" && ua.length > 0, `User-Agent missing: ${ua}`);
+    expect(typeof ua === "string" && ua.length > 0).toBe(true);
   });
 
   it("uses Bearer auth", () => {
-    assert.deepEqual(kimchiEntry.transport.auth, {
+    expect(kimchiEntry.transport.auth).toEqual({
       combined: true,
       header: "Authorization",
       scheme: "bearer",
@@ -37,14 +35,14 @@ describe("kimchi registry entry", () => {
 
   it("exposes the upstream static models", () => {
     const ids = kimchiEntry.models.map((m) => m.id);
-    assert.ok(ids.includes("kimi-k2.7"));
-    assert.ok(ids.includes("minimax-m3"));
-    assert.ok(ids.includes("nemotron-3-ultra-fp4"));
-    assert.ok(ids.length >= 5, `expected >= 5 static models, got ${ids.length}`);
+    expect(ids.includes("kimi-k2.7"));
+    expect(ids.includes("minimax-m3")).toBeTruthy();
+    expect(ids.includes("nemotron-3-ultra-fp4")).toBeTruthy();
+    expect(ids.length >= 5).toBe(true).toBeTruthy();
   });
 
   it("passes through models not in the static list", () => {
-    assert.equal(kimchiEntry.passthroughModels, true);
+    expect(kimchiEntry.passthroughModels).toBe(true);
   });
 });
 
@@ -78,22 +76,20 @@ describe("kimchi oauth", () => {
   it("builds the cli-auth URL with encoded callback + state", () => {
     const url = buildKimchiAuthUrl("http://127.0.0.1:4321/callback", "abc123");
     const parsed = new URL(url);
-    assert.equal(parsed.origin, "https://app.kimchi.dev");
-    assert.equal(parsed.pathname, "/cli-auth");
-    assert.equal(parsed.searchParams.get("callback"), "http://127.0.0.1:4321/callback");
-    assert.equal(parsed.searchParams.get("state"), "abc123");
+    expect(parsed.origin).toBe("https://app.kimchi.dev");
+    expect(parsed.pathname).toBe("/cli-auth");
+    expect(parsed.searchParams.get("callback")).toBe("http://127.0.0.1:4321/callback");
+    expect(parsed.searchParams.get("state")).toBe("abc123");
   });
 
   it("rejects a callback whose state does not match", async () => {
-    await assert.rejects(
-      () => _handleCallback({ token: "castai_v1_x", state: "wrong" }, "expected"),
-      /restart/i,
-    );
+    await expect(_handleCallback({ token: "castai_v1_x", state: "wrong" }, "expected"))
+      .rejects.toThrow(/restart/i);
   });
 
   it("accepts a callback with matching state and returns the token", async () => {
     const res = await _handleCallback({ token: "castai_v1_x", state: "match" }, "match");
-    assert.equal(res.token, "castai_v1_x");
+    expect(res.token).toBe("castai_v1_x");
   });
 });
 
@@ -121,8 +117,8 @@ describe("kimchiModels", () => {
       limits: { context_window: 1048576, max_output_tokens: 1048576 },
     }];
     const models = mapKimchiMetadata(raw);
-    assert.equal(models.length, 1);
-    assert.deepEqual(models[0], {
+    expect(models.length).toBe(1);
+    expect(models[0]).toEqual({
       id: "glm-5.2-fp8",
       name: "GLM 5.2",
       contextLength: 1048576,
@@ -133,14 +129,14 @@ describe("kimchiModels", () => {
 
   it("falls back to slug as name when display_name is empty", () => {
     const models = mapKimchiMetadata([{ slug: "kimi-k2.7", display_name: "", reasoning: false, limits: {} }]);
-    assert.equal(models[0].name, "kimi-k2.7");
-    assert.equal(models[0].contextLength, null);
-    assert.equal(models[0].isReasoning, false);
+    expect(models[0].name).toBe("kimi-k2.7");
+    expect(models[0].contextLength).toBe(null);
+    expect(models[0].isReasoning).toBe(false);
   });
 
   it("returns empty array for non-array input", () => {
-    assert.deepEqual(mapKimchiMetadata(null), []);
-    assert.deepEqual(mapKimchiMetadata({}), []);
+    expect(mapKimchiMetadata(null)).toEqual([]);
+    expect(mapKimchiMetadata({})).toEqual([]);
   });
 });
 
@@ -157,21 +153,21 @@ function decideValidity(status) {
 
 describe("kimchi validateToken", () => {
   it("200 → valid", () => {
-    assert.deepEqual(decideValidity(200), { valid: true });
+    expect(decideValidity(200)).toEqual({ valid: true });
   });
   it("401 → invalid, expired message", () => {
     const r = decideValidity(401);
-    assert.equal(r.valid, false);
-    assert.match(r.error, /invalid or expired/i);
+    expect(r.valid).toBe(false);
+    expect(r.error).toMatch(/invalid or expired/i);
   });
   it("403 → invalid, scope message", () => {
     const r = decideValidity(403);
-    assert.equal(r.valid, false);
-    assert.match(r.error, /scope/i);
+    expect(r.valid).toBe(false);
+    expect(r.error).toMatch(/scope/i);
   });
   it("unknown / network error → fail-open valid", () => {
-    assert.equal(decideValidity(500).valid, true);
-    assert.equal(decideValidity(0).valid, true);
+    expect(decideValidity(500).valid).toBe(true);
+    expect(decideValidity(0).valid).toBe(true);
   });
 });
 
@@ -204,31 +200,31 @@ describe("kimchi OAuth dedup", () => {
   const other = { authType: "oauth", email: "z@y.com", providerSpecificData: { username: "google-oauth2|789" } };
 
   it("different email never matches", () => {
-    assert.equal(findExistingOAuth([other], google), undefined);
+    expect(findExistingOAuth([other], google)).toBe(undefined);
   });
 
   it("same email + same username = dedup (re-login same IdP)", () => {
     const found = findExistingOAuth([google], { ...google });
-    assert.equal(found, google);
+    expect(found).toBe(google);
   });
 
   it("same email + different username = NO match (cross-IdP, the bug)", () => {
-    assert.equal(findExistingOAuth([google], hf), undefined);
+    expect(findExistingOAuth([google], hf)).toBe(undefined);
   });
 
   it("legacy row without username matches incoming without username (backward compat)", () => {
-    assert.equal(findExistingOAuth([legacy], { ...legacy }), legacy);
+    expect(findExistingOAuth([legacy], { ...legacy })).toBe(legacy);
   });
 
   it("incoming without username does not match legacy row with username", () => {
-    assert.equal(findExistingOAuth([google], { ...legacy }), undefined);
+    expect(findExistingOAuth([google], { ...legacy })).toBe(undefined);
   });
 
   it("workspaces still dedupe on workspace ID when both sides have one", () => {
     const ws1 = { authType: "oauth", email: "a@b.com", providerSpecificData: { chatgptAccountId: "ws1" } };
     const ws1dup = { authType: "oauth", email: "a@b.com", providerSpecificData: { chatgptAccountId: "ws1" } };
     const ws2 = { authType: "oauth", email: "a@b.com", providerSpecificData: { chatgptAccountId: "ws2" } };
-    assert.equal(findExistingOAuth([ws1], ws1dup), ws1);
-    assert.equal(findExistingOAuth([ws1], ws2), undefined);
+    expect(findExistingOAuth([ws1], ws1dup)).toBe(ws1);
+    expect(findExistingOAuth([ws1], ws2)).toBe(undefined);
   });
 });

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { removeTempDir } from "../helpers/tmp.js";
 describe("cloudflared PID ownership", () => {
   let dataDir;
 
@@ -14,7 +15,7 @@ describe("cloudflared PID ownership", () => {
 
   afterEach(() => {
     delete process.env.DATA_DIR;
-    fs.rmSync(dataDir, { recursive: true, force: true });
+    removeTempDir(dataDir);
   });
 
   it("does not let an old child clear its successor PID", async () => {

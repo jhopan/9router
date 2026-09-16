@@ -69,8 +69,13 @@ vi.mock("../../open-sse/rtk/index.js", () => ({
 }));
 
 vi.mock("../../open-sse/rtk/headroom.js", () => ({
+  // Must mirror every export chatCore.js imports: it added
+  // formatHeadroomSizeLog + isHeadroomPhantomSavings after this suite was
+  // written, and a partial mock makes vitest throw at import time.
   compressWithHeadroom: vi.fn(async () => null),
   formatHeadroomLog: vi.fn(() => ""),
+  formatHeadroomSizeLog: vi.fn(() => ""),
+  isHeadroomPhantomSavings: vi.fn(() => false),
 }));
 
 vi.mock("../../open-sse/providers/capabilities.js", () => ({

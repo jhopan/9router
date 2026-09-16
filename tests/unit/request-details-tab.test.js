@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 
+import { removeTempDir } from "../helpers/tmp.js";
 const originalDataDir = process.env.DATA_DIR;
 let tempDir;
 let db;
@@ -22,14 +23,17 @@ beforeAll(async () => {
   vi.resetModules();
   db = await import("@/lib/db/index.js");
   await db.initDb();
-  await db.updateSettings({ enableObservability2: true, observabilityBatchSize: 1 });
+  // Real settings key is `enableObservability` (settingsRepo.js default + the
+  // dashboard toggle). The previous `enableObservability2` was a typo, so the
+  // batch writer stayed off and every detail this suite saved was dropped.
+  await db.updateSettings({ enableObservability: true, observabilityBatchSize: 1 });
 
   const { getAdapter } = await import("@/lib/db/driver.js");
   adapter = await getAdapter();
 });
 
 afterAll(() => {
-  if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+  if (tempDir) removeTempDir(tempDir);
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
 });
@@ -144,7 +148,7 @@ describe("backupDbLite — excludes requestDetails, keeps critical data", () => 
       expect(st.c).toBeGreaterThanOrEqual(1);
     } finally {
       bak.close();
-      fs.rmSync(backupDir, { recursive: true, force: true });
+      removeTempDir(backupDir);
     }
   });
 });

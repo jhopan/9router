@@ -105,8 +105,12 @@ describe("Kiro external_idp (CLIProxyAPI) import and refresh", () => {
     expect(headers.TokenType).toBe("EXTERNAL_IDP");
     expect(headers.tokentype).toBeUndefined();
 
+    // Endpoint ordering: external_idp / api_key surfaces must try the `q.*`
+    // gateway FIRST. The old expectation was the codewhisperer host, which
+    // api-key connections hit "wrong host first" and never reached a working
+    // surface — see the note above getOrderedBaseUrls in open-sse/executors/kiro.js.
     expect(executor.buildUrl("claude-sonnet-4.5", true, 0, credentials)).toBe(
-      "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse"
+      "https://q.us-east-1.amazonaws.com/generateAssistantResponse"
     );
   });
 

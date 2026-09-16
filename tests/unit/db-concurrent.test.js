@@ -1,10 +1,20 @@
 // Concurrency stress test — simulate many parallel saveRequestUsage / saveRequestDetail
 // to verify atomic counter, no data loss, no race conditions.
+//
+// NOTE on fixtures: saveRequestUsage de-duplicates a write whose
+// (timestamp, provider, model, connectionId, apiKey, promptTokens,
+// completionTokens) tuple already exists — that guard stops a client retry from
+// being counted twice. Entries spawned in the same millisecond therefore look
+// like retries of each other and collapse into one row. Each entry below gets a
+// distinct timestamp so the suite measures CONCURRENCY (all writes must land),
+// not the de-dupe guard. Verified: 100 parallel writes with distinct timestamps
+// land as 100 rows; the same 100 with an identical timestamp land as 1.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 
+import { removeTempDir } from "../helpers/tmp.js";
 const originalDataDir = process.env.DATA_DIR;
 let tempDir;
 let db;
@@ -18,7 +28,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+  if (tempDir) removeTempDir(tempDir);
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
 });
@@ -26,12 +36,15 @@ afterAll(() => {
 describe("DB Concurrency — atomic safety", () => {
   it("100 parallel saveRequestUsage → no count loss", async () => {
     const N = 100;
+    const base = Date.now();
     const promises = [];
     for (let i = 0; i < N; i++) {
       promises.push(db.saveRequestUsage({
         provider: "openai", model: "gpt-4", connectionId: "c1",
         tokens: { prompt_tokens: 10, completion_tokens: 5 },
         endpoint: "/v1/chat", status: "ok",
+        // Distinct per entry — see the de-dupe note in the file header.
+        timestamp: new Date(base + i).toISOString(),
       }));
     }
     await Promise.all(promises);
@@ -68,10 +81,12 @@ describe("DB Concurrency — atomic safety", () => {
 
   it("mixed concurrent: usage + details + connections + aliases", async () => {
     const ops = [];
+    const base = Date.now();
     for (let i = 0; i < 50; i++) {
       ops.push(db.saveRequestUsage({
         provider: "anthropic", model: `m-${i % 3}`, connectionId: "c2",
         tokens: { prompt_tokens: 20 }, status: "ok",
+        timestamp: new Date(base + i).toISOString(),
       }));
       ops.push(db.setModelAlias(`a-${i}`, `target-${i}`));
       ops.push(db.disableModels("openai", [`d-${i}`]));
@@ -151,12 +166,14 @@ describe("DB Concurrency — atomic safety", () => {
 
   it("daily summary aggregates correctly under parallel writes", async () => {
     const N = 50;
+    const base = Date.now();
     const promises = [];
     for (let i = 0; i < N; i++) {
       promises.push(db.saveRequestUsage({
         provider: "google", model: "gemini-pro", connectionId: "cG",
         tokens: { prompt_tokens: 100, completion_tokens: 50 },
         status: "ok",
+        timestamp: new Date(base + i).toISOString(),
       }));
     }
     await Promise.all(promises);

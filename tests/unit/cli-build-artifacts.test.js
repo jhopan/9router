@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { removeTempDir } from "../helpers/tmp.js";
 let testApi;
 try {
   testApi = await import("vitest");
@@ -46,7 +47,7 @@ function createCompleteServer(buildDistDir) {
 
 afterEach(() => {
   for (const tempDir of tempDirs.splice(0)) {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    removeTempDir(tempDir);
   }
 });
 

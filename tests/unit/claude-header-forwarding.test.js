@@ -236,8 +236,13 @@ describe("proxyAwareFetch — api.anthropic.com routing", () => {
     vi.restoreAllMocks();
   });
 
-  it("routes api.anthropic.com to gotScraping (non-streaming) and returns ok response", async () => {
-    // Mock got-scraping before module load
+  it("serves api.anthropic.com through the native fetch path (JA3 spoofing disabled)", async () => {
+    // open-sse/utils/proxyFetch.js disables the got-scraping TLS-fingerprint
+    // block in upstream and in this fork alike:
+    //   "// ─── TLS fingerprinting via got-scraping (browser-like JA3) ───
+    //    // Disabled: not in use. Kept commented for future re-enable."
+    // so api.anthropic.com must go through globalThis.fetch, and gotScraping is
+    // never called. (The previous expectation asserted the removed behaviour.)
     vi.doMock("got-scraping", () => {
       const mockGotScraping = vi.fn().mockResolvedValue({
         statusCode: 200,
@@ -250,21 +255,39 @@ describe("proxyAwareFetch — api.anthropic.com routing", () => {
     });
 
     vi.resetModules();
-    const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
-    const { gotScraping } = await import("got-scraping");
-
-    const res = await proxyAwareFetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      // No Accept: text/event-stream → non-streaming path
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "claude-3-5-sonnet-20241022", messages: [] }),
+    const originalFetch = globalThis.fetch;
+    // proxyFetch.js REPLACES globalThis.fetch with its own patchedFetch at import
+    // time, so the spy must be held in a local reference before the import.
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => ({ id: "msg_test" }),
+      text: async () => JSON.stringify({ id: "msg_test" }),
     });
+    globalThis.fetch = fetchSpy;
 
-    expect(gotScraping).toHaveBeenCalledOnce();
-    expect(res.ok).toBe(true);
-    expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(data.id).toBe("msg_test");
+    try {
+      const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
+      const { gotScraping } = await import("got-scraping");
+
+      const res = await proxyAwareFetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        // No Accept: text/event-stream → non-streaming path
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "claude-3-5-sonnet-20241022", messages: [] }),
+      });
+
+      expect(fetchSpy).toHaveBeenCalled();
+      expect(gotScraping).not.toHaveBeenCalled();
+      expect(res.ok).toBe(true);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.id).toBe("msg_test");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it("falls back gracefully when got-scraping throws on non-streaming path", async () => {

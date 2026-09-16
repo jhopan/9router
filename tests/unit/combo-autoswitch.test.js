@@ -35,11 +35,16 @@ describe("detectRequiredCapabilities", () => {
     expect(r.has("vision")).toBe(true);
   });
 
-  it("web_search tool -> search", () => {
+  it("web_search tool -> search (deliberately disabled in auto-switch)", () => {
+    // open-sse/services/combo.js carries "// search: temporarily disabled in
+    // auto-switch (feature not wired yet)." — the detector intentionally does not
+    // report `search`, so a combo never reorders for it. Flip this assertion the
+    // moment that wiring lands.
     const r = detectRequiredCapabilities({ messages: [{ role: "user", content: "q" }], tools: [
       { type: "web_search" },
     ] });
-    expect(r.has("search")).toBe(true);
+    expect(r.has("search")).toBe(false);
+    expect(r.size).toBe(0);
   });
 
   it("responses input_image -> vision", () => {
@@ -68,7 +73,11 @@ describe("reorderByCapabilities", () => {
   it("keeps order when no model matches", () => {
     const models = ["deepseek/deepseek-chat", "deepseek/deepseek-reasoner"];
     const out = reorderByCapabilities(models, new Set(["vision"]));
-    expect(out).toBe(models);
+    // The contract is ORDER, not array identity: reorderByCapabilities always
+    // rebuilds the list (stable sort by tier) even when every model lands in the
+    // same tier. Assert the order is untouched and the input was not mutated.
+    expect(out).toEqual(models);
+    expect(models).toEqual(["deepseek/deepseek-chat", "deepseek/deepseek-reasoner"]);
   });
 
   it("single model -> unchanged", () => {

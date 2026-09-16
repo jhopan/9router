@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
+import { removeTempDir } from "../helpers/tmp.js";
 const originalDataDir = process.env.DATA_DIR;
 
 async function setupTestContext(nodeData) {
@@ -33,7 +34,7 @@ async function setupTestContext(nodeData) {
     POST,
     getProviderConnections,
     cleanup() {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      removeTempDir(tempDir);
     },
   };
 }

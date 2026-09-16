@@ -21,6 +21,7 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 
+import { removeTempDir } from "../helpers/tmp.js";
 const require = createRequire(import.meta.url);
 const { run, parseArgs, downloadToFile, sanitizeText, imageInputToUrl } = require("../../cli/src/cli/commands/xaiVideo.js");
 
@@ -47,7 +48,7 @@ afterEach(async () => {
     await closeServer(server);
     server = null;
   }
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  removeTempDir(tmpDir);
   vi.restoreAllMocks();
 });
 

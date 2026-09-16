@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
 import { dailyQuotaCooldownMs, MAX_DAILY_QUOTA_COOLDOWN_MS } from "../../open-sse/config/errorConfig.js";
-import { quotaWindowFor } from "../../open-sse/config/quotaWindows.js";
+import { quotaWindowFor, QUOTA_SCOPES, calendarResetMs } from "../../open-sse/config/quotaWindows.js";
 
 // Real Cline body that motivated this: the router used to treat it as a burst
 // rate limit (429 backoff: 2s, 4s, 8s…) and re-selected the same dead account
@@ -14,7 +14,13 @@ describe("daily free-tier quota classification", () => {
     expect(res.shouldFallback).toBe(true);
     expect(res.dailyQuota).toBe(true);
     expect(res.newBackoffLevel).toBe(0); // no backoff ladder
-    expect(res.cooldownMs).toBeGreaterThan(60 * 60 * 1000); // hours, not seconds
+    // The cooldown is "until the next 00:00 UTC", so its MAGNITUDE depends on the
+    // wall clock when the suite runs (49 minutes if it is almost midnight UTC,
+    // ~24h just after). Assert the boundary it lands on instead of a fixed size.
+    const expected = calendarResetMs(QUOTA_SCOPES.DAILY, { resetUtcHour: 0 }, Date.now());
+    expect(Math.abs((Date.now() + res.cooldownMs) - expected)).toBeLessThan(5000);
+    expect(res.cooldownMs).toBeGreaterThan(0);
+    expect(res.cooldownMs).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
   });
 
   it("the cooldown lands on the provider's reset hour", () => {

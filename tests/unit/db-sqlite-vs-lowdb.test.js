@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 
+import { removeTempDir } from "../helpers/tmp.js";
 const originalDataDir = process.env.DATA_DIR;
 let tempDir;
 let sqliteDb;
@@ -18,7 +19,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+  if (tempDir) removeTempDir(tempDir);
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
 });

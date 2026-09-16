@@ -70,7 +70,7 @@ describe("Hermes Vision Image Detection", () => {
     expect(caps.has("vision")).toBe(true);
   });
 
-  it("auto-switches non-vision model (deepseek-v4-pro) to Vision Adapter model (Kimi-K3)", () => {
+  it("auto-switches non-vision model (deepseek-v4-pro) to Vision Adapter model (Kimi-K3)", async () => {
     const body = {
       messages: [
         {
@@ -90,7 +90,9 @@ describe("Hermes Vision Image Detection", () => {
       },
     };
 
-    const augmented = augmentModelsWithCapacityAdapter(["cmc/deepseek/deepseek-v4-pro"], reqCaps, settings);
+    // augmentModelsWithCapacityAdapter is async (it may consult connection
+    // capabilities), so it has to be awaited before comparing.
+    const augmented = await augmentModelsWithCapacityAdapter(["cmc/deepseek/deepseek-v4-pro"], reqCaps, settings);
     expect(augmented).toEqual(["cmc/moonshotai/Kimi-K3", "cmc/deepseek/deepseek-v4-pro"]);
   });
 

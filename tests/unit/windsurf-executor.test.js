@@ -160,12 +160,21 @@ describe("decodeCompletionChunk", () => {
   });
 });
 
+// Windsurf is TEMPORARILY HIDDEN in the registry (registry/index.js comment:
+// "// p104, // windsurf — hidden, no tool calling") in upstream and in this fork
+// alike, so PROVIDERS.windsurf is intentionally undefined. The executor module
+// still loads its own registry file, so the class-level assertions below run
+// against the real endpoint the registry ships (server.codeium.com — the older
+// self-serve.windsurf.com host this suite originally expected was never used by
+// the registry).
 describe("WindsurfExecutor class", () => {
-  it("constructor wires config from PROVIDERS.windsurf", () => {
+  const CHAT_URL = "https://server.codeium.com/exa.language_server_pb.LanguageServerService/GetChatMessage";
+
+  it("constructor wires config from the windsurf registry entry", () => {
     const ex = new WindsurfExecutor();
     expect(ex.provider).toBe("windsurf");
     expect(ex.config).toBeDefined();
-    expect(ex.config.baseUrl).toContain("server.self-serve.windsurf.com");
+    expect(ex.config.baseUrl).toBe(CHAT_URL);
     expect(typeof ex.execute).toBe("function");
   });
 
@@ -187,12 +196,14 @@ describe("WindsurfExecutor class", () => {
 
   it("buildUrl returns the GetChatMessage endpoint", () => {
     const ex = new WindsurfExecutor();
-    expect(ex.buildUrl()).toBe("https://server.self-serve.windsurf.com/exa.language_server_pb.LanguageServerService/GetChatMessage");
+    expect(ex.buildUrl()).toBe(CHAT_URL);
   });
 
-  it("PROVIDERS.windsurf baseUrl is the chat endpoint (registry in sync)", () => {
-    expect(PROVIDERS.windsurf.baseUrl).toBe(
-      "https://server.self-serve.windsurf.com/exa.language_server_pb.LanguageServerService/GetChatMessage"
-    );
+  it("stays deliberately absent from PROVIDERS while the registry hides it", () => {
+    // If windsurf is ever un-hidden (registry/index.js), this test flips red on
+    // purpose: re-enable the registry-sync assertion then.
+    expect(PROVIDERS.windsurf).toBeUndefined();
+    const ex = new WindsurfExecutor();
+    expect(ex.config.baseUrl).toBe(CHAT_URL);
   });
 });

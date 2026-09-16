@@ -5,6 +5,18 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it, beforeAll, afterAll, vi } from "vitest";
 
+import { removeTempDir } from "../helpers/tmp.js";
+// lowdb is an OPTIONAL dependency (deliberately not installed — see AGENTS.md:
+// persistence moved to SQLite). Without it the dynamic import in beforeAll threw a
+// file-level failure, breaking the whole suite for a module this repo no longer
+// ships. Detect it and skip cleanly instead.
+const hasLowdb = await import("lowdb").then(() => true).catch(() => false);
+const describeIfLowdb = describe.skipIf(!hasLowdb);
+if (!hasLowdb) {
+  console.warn("[db-benchmark] lowdb not installed — benchmark suite skipped");
+}
+
+
 const N_ITEMS = 500;
 const N_QUERIES = 200;
 
@@ -43,13 +55,13 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  if (tempSqlite) fs.rmSync(tempSqlite, { recursive: true, force: true });
-  if (tempLowdb) fs.rmSync(tempLowdb, { recursive: true, force: true });
+  if (tempSqlite) removeTempDir(tempSqlite);
+  if (tempLowdb) removeTempDir(tempLowdb);
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
 });
 
-describe("DB Benchmark — SQLite vs Lowdb", () => {
+describeIfLowdb("DB Benchmark — SQLite vs Lowdb", () => {
   it(`INSERT ${N_ITEMS} provider connections`, async () => {
     console.log(`\n[INSERT ${N_ITEMS}]`);
 
