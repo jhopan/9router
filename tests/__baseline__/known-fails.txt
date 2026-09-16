@@ -1,3 +1,38 @@
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpArgs decode decodes name, toolName, toolCallId, and typed args map
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpArgs decode handles empty args map
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult error / toolNotFound builds error result (field 2)
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult error / toolNotFound builds toolNotFound result (field 5)
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult image content builds image item with raw bytes + mime type
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult image content builds mixed text + image content
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult success builds success with multiple text items
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult success builds success with single text content
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult success marks is_error=true
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpToolDefinition accepts flat tool shape (no .function wrapper)
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpToolDefinition encodes name, description, input_schema (Value), provider, tool_name
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpToolDefinition preserves nested JSON-schema types
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) encodeMcpTools produces empty bytes for no tools
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) encodeMcpTools wraps multiple tool defs as repeated field 1
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes array of mixed
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes bool false
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes bool true
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes deeply nested
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes empty object
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes flat object
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes float
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes integer
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes nested object
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes null
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes string
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) buildAgentRunFrame encodes a text-only run request with system + model
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) buildAgentRunFrame encodes conversation_history from prior turns including tool calls/results
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) buildAgentRunFrame encodes mcp_tools (field 4) when tools are provided
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) buildAgentRunFrame omits mcp_tools when no tools provided
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest accepts array text content
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest accepts history with assistant tool_calls + tool results
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest accepts plain text content
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest accepts request with tools declared
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest rejects missing messages
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest rejects non-text (image) content
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import extracts tokens using exact keys
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import falls back to fuzzy key matching on macOS when exact keys are missing
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import linux uses single hardcoded path and original error message
